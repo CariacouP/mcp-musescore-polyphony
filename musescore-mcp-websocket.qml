@@ -118,6 +118,21 @@ MuseScore {
         return noteNames[note % 12];
     }
 
+    function getTpcName(tpc) {
+        if (tpc === -1) return "Fbb";
+        var tpcNames = [
+            "Cbb", "Gbb", "Dbb", "Abb", "Ebb", "Bbb", "Fb",
+            "Cb",  "Gb",  "Db",  "Ab",  "Eb",  "Bb",  "F",
+            "C",   "G",   "D",   "A",   "E",   "B",   "F#",
+            "C#",  "G#",  "D#",  "A#",  "E#",  "B#",  "F##",
+            "C##", "G##", "D##", "A##", "E##", "B##", "F###"
+        ];
+        if (tpc >= 0 && tpc < tpcNames.length) {
+            return tpcNames[tpc];
+        }
+        return "Unknown";
+    }
+
     function getDurationName(duration) {
         const durationNames = ["LONG","BREVE","WHOLE","HALF","QUARTER","EIGHTH","16TH","32ND","64TH","128TH","256TH","512TH","1024TH","ZERO","MEASURE","INVALID"];
         return durationNames[duration] || "UNKNOWN";
@@ -199,48 +214,30 @@ MuseScore {
 
     function processElement(element) {
         if (!element) return null;
-        
+        if (element.name !== "Chord" && element.name !== "Rest") return null;
+
         var base = {
             name: element.name,
-            subtype: element.subtype,
-            subtypeName: element.subtypeName,
-            baseDuration: getDurationName(element.durationType ? element.durationType.type : 0),
-            dotted: element.durationType ? element.durationType.dots : 0,
             durationTicks: element.actualDuration ? element.actualDuration.ticks : 0,
-            tuplet: element.tuplet ? {   
-                durationNumerator: element.tuplet.duration.numerator,
-                durationDenominator: element.tuplet.duration.denominator,
-            } : null
+            isTie: element.tieForward ? true : false,
+            isTuplet: element.tuplet ? true : false
         };
 
-        switch (element.name) {
-            case "Note":
-                return Object.assign(base, {
-                    pitchMidi: element.pitch,
-                    pitchName: getNoteName(element.pitch),
-                    noteType: element.noteType,
-                    accidental: element.accidental,
-                    tieBack: element.tieBack,
-                    tieForward: element.tieForward
+        if (element.name === "Chord") {
+            base.notes = [];
+            var notesObj = element.notes || {};
+            var keys = Object.keys(notesObj);
+            for (var k = 0; k < keys.length; k++) {
+                var note = notesObj[keys[k]];
+                base.notes.push({
+                    pitchMidi: note.pitch,
+                    tpc: note.tpc,
+                    pitchName: getTpcName(note.tpc)
                 });
-            
-            case "Chord":
-                return Object.assign(base, {
-                    noteType: element.noteType,
-                    notes: Object.keys(element.notes || {}).map(function(k) {
-                        return {
-                            pitchMidi: element.notes[k].pitch, 
-                            pitchName: getNoteName(element.notes[k].pitch)
-                        };
-                    })
-                });
-                
-            case "Rest":
-                return base;
-                
-            default:
-                return { name: element.name, properties: Object.keys(element) };
+            }
         }
+                
+        return base;
     }
 
     // ========================================
@@ -322,7 +319,6 @@ MuseScore {
                             if (el) {
                                 var processed = processElement(el);
                                 if (processed) {
-                                    processed.staff = s;
                                     processed.voice = v;
                                     processed.startTick = currentSegment.tick;
                                     elementsMap[`staff${s}`].push(processed);
@@ -642,7 +638,7 @@ MuseScore {
             curScore.selection.selectRange(startTick, endTick, startStaff, endStaff);
 
             var elementsMap = {};
-            for (var st = startStaff; st < endStaff; st++) {
+            for (var st = startStaff; st <= endStaff; st++) {
                 elementsMap[`staff${st}`] = [];
             }
 
@@ -655,14 +651,13 @@ MuseScore {
             }
 
             while (currentSegment && currentSegment.tick < endTick) {
-                for (var s = startStaff; s < endStaff; s++) {
+                for (var s = startStaff; s <= endStaff; s++) {
                     for (var v = 0; v < 4; v++) {
                         var track = s * 4 + v;
                         var el = currentSegment.elementAt(track);
                         if (el) {
                             var processed = processElement(el);
                             if (processed) {
-                                processed.staff = s;
                                 processed.voice = v;
                                 processed.startTick = currentSegment.tick;
                                 elementsMap[`staff${s}`].push(processed);
