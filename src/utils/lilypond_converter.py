@@ -121,8 +121,17 @@ def process_element(element: Dict[str, Any]) -> str:
         
         elif elem_name == "Chord":
             notes = element.get("notes", [])
+            lyrics_data = element.get("lyrics", [])
+            lyric_str = ""
+            if lyrics_data:
+                texts = [lyr.get("text", "") for lyr in lyrics_data if lyr.get("text")]
+                if texts:
+                    # Sanitize quotes
+                    safe_texts = "-".join(texts).replace('"', "'")
+                    lyric_str = f'^"{safe_texts}"'
+
             if not notes:
-                return f"r{lily_duration}"
+                return f"r{lily_duration}{lyric_str}"
             
             lily_notes = []
             for note in notes:
@@ -132,12 +141,12 @@ def process_element(element: Dict[str, Any]) -> str:
                     lily_notes.append(midi_to_lilypond_pitch(pitch, tpc))
             
             if not lily_notes:
-                return f"r{lily_duration}"
+                return f"r{lily_duration}{lyric_str}"
             elif len(lily_notes) == 1:
-                return f"{lily_notes[0]}{lily_duration}"
+                return f"{lily_notes[0]}{lily_duration}{lyric_str}"
             else:
                 joined_notes = " ".join(lily_notes)
-                return f"<{joined_notes}>{lily_duration}"
+                return f"<{joined_notes}>{lily_duration}{lyric_str}"
         else:
             return ""  # Ignore other elements without crashing
     except Exception as e:

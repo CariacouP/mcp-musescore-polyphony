@@ -55,6 +55,8 @@ def setup_navigation_tools(mcp, client: MuseScoreClient):
                             
                 meta.append(f"Portée: {staff_name}")
             
+            if "title" in score_info and score_info["title"]:
+                meta.append(f"Titre: {score_info['title']}")
             if "numMeasures" in score_info:
                 meta.append(f"Total Mesures: {score_info['numMeasures']}")
             

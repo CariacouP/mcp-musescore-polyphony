@@ -223,6 +223,20 @@ MuseScore {
             isTuplet: element.tuplet ? true : false
         };
 
+        if (element.lyrics && element.lyrics.length > 0) {
+            base.lyrics = [];
+            for (var l = 0; l < element.lyrics.length; l++) {
+                var lyr = element.lyrics[l];
+                if (lyr) {
+                    base.lyrics.push({
+                        text: lyr.text,
+                        no: lyr.no,
+                        syllabic: lyr.syllabic
+                    });
+                }
+            }
+        }
+
         if (element.name === "Chord") {
             base.notes = [];
             var notesObj = element.notes || {};
@@ -1027,6 +1041,7 @@ MuseScore {
         return executeWithUndo(function() {
             var tempState = selectionState;
             var score = {
+                title: curScore.metaTag("workTitle") || curScore.title || "",
                 numMeasures: curScore.nmeasures,
                 measures: [],
                 staves: []
