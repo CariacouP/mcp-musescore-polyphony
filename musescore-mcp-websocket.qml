@@ -223,15 +223,46 @@ MuseScore {
             isTuplet: element.tuplet ? true : false
         };
 
-        if (element.lyrics && element.lyrics.length > 0) {
+        var lyricsList = [];
+        try {
+            if (typeof element.lyrics === "function") {
+                lyricsList = element.lyrics() || [];
+            } else if (element.lyrics) {
+                // Could be an array or object
+                lyricsList = element.lyrics;
+            }
+        } catch (e) {
+            console.log("Error reading lyrics property: " + e);
+        }
+
+        // Fallback: check segment annotations if no lyrics found directly
+        if ((!lyricsList || lyricsList.length === 0) && element.parent) {
+            try {
+                var segment = element.parent;
+                if (segment.annotations) {
+                    for (var a = 0; a < segment.annotations.length; a++) {
+                        var ann = segment.annotations[a];
+                        if (ann && (ann.type === Element.LYRICS || ann.name === "Lyrics") && ann.track === element.track) {
+                            // Ensure it's treated as an array
+                            if (!Array.isArray(lyricsList)) lyricsList = [];
+                            lyricsList.push(ann);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log("Error reading segment annotations: " + e);
+            }
+        }
+
+        if (lyricsList && lyricsList.length > 0) {
             base.lyrics = [];
-            for (var l = 0; l < element.lyrics.length; l++) {
-                var lyr = element.lyrics[l];
-                if (lyr) {
+            for (var l = 0; l < lyricsList.length; l++) {
+                var lyr = lyricsList[l];
+                if (lyr && lyr.text) {
                     base.lyrics.push({
                         text: lyr.text,
-                        no: lyr.no,
-                        syllabic: lyr.syllabic
+                        no: lyr.no !== undefined ? lyr.no : (lyr.verse !== undefined ? lyr.verse : 0),
+                        syllabic: lyr.syllabic !== undefined ? lyr.syllabic : 0
                     });
                 }
             }
