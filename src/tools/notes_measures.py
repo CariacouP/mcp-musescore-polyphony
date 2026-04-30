@@ -2,6 +2,7 @@
 
 from typing import List, Optional
 from ..client import MuseScoreClient
+from ..utils.response_formatter import run_and_format_response
 
 
 def setup_notes_measures_tools(mcp, client: MuseScoreClient):
@@ -16,7 +17,7 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
             duration: Duration as {"numerator": int, "denominator": int} (e.g., {"numerator": 1, "denominator": 4} for quarter note)
             advance_cursor_after_action: Whether to move cursor to next position after adding note
         """
-        return await client.send_command("addNote", {
+        return await run_and_format_response(client, "addNote", {
             "pitch": pitch, 
             "duration": duration,
             "advanceCursorAfterAction": advance_cursor_after_action
@@ -30,7 +31,7 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
             duration: Duration as {"numerator": int, "denominator": int} (e.g., {"numerator": 1, "denominator": 4} for quarter rest)
             advance_cursor_after_action: Whether to move cursor to next position after adding rest
         """
-        return await client.send_command("addRest", {
+        return await run_and_format_response(client, "addRest", {
             "duration": duration,
             "advanceCursorAfterAction": advance_cursor_after_action
         })
@@ -44,7 +45,7 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
             ratio: Tuplet ratio as {"numerator": int, "denominator": int} (e.g., {"numerator": 3, "denominator": 2} for triplet)
             advance_cursor_after_action: Whether to move cursor to next position after adding tuplet
         """
-        return await client.send_command("addTuplet", {
+        return await run_and_format_response(client, "addTuplet", {
             "duration": duration,
             "ratio": ratio,
             "advanceCursorAfterAction": advance_cursor_after_action
@@ -58,7 +59,7 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
             lyrics: List of lyric syllables to add (e.g., ["Hel", "lo", "world"])
             verse: Verse number (0-based, default is 0 for first verse)
         """
-        return await client.send_command("addLyrics", {
+        return await run_and_format_response(client, "addLyrics", {
             "lyrics": lyrics,
             "verse": verse
         })
@@ -66,12 +67,12 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
     @mcp.tool()
     async def insert_measure():
         """Insert a measure at the current position."""
-        return await client.send_command("insertMeasure")
+        return await run_and_format_response(client, "insertMeasure")
 
     @mcp.tool()
     async def append_measure(count: int = 1):
         """Append measures to the end of the score."""
-        return await client.send_command("appendMeasure", {"count": count})
+        return await run_and_format_response(client, "appendMeasure", {"count": count})
 
     @mcp.tool()
     async def delete_selection(measure: Optional[int] = None):
@@ -79,9 +80,9 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
         params = {}
         if measure is not None:
             params["measure"] = measure
-        return await client.send_command("deleteSelection", params)
+        return await run_and_format_response(client, "deleteSelection", params)
 
     @mcp.tool()
     async def undo():
         """Undo the last action."""
-        return await client.send_command("undo")
+        return await run_and_format_response(client, "undo")

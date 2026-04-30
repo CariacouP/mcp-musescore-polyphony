@@ -1,6 +1,7 @@
 """Staff and instrument tools for MuseScore MCP."""
 
 from ..client import MuseScoreClient
+from ..utils.response_formatter import run_and_format_response
 
 
 def setup_staff_instruments_tools(mcp, client: MuseScoreClient):
@@ -13,7 +14,7 @@ def setup_staff_instruments_tools(mcp, client: MuseScoreClient):
         Args:
             instrument_id: ID of the instrument to add
         """
-        return await client.send_command("addInstrument", {
+        return await run_and_format_response(client, "addInstrument", {
             "instrumentId": instrument_id
         })
 
@@ -25,7 +26,7 @@ def setup_staff_instruments_tools(mcp, client: MuseScoreClient):
             staff: Staff number (0-based)
             mute: True to mute, False to unmute
         """
-        return await client.send_command("setStaffMute", {
+        return await run_and_format_response(client, "setStaffMute", {
             "staff": staff,
             "mute": mute
         })
@@ -38,7 +39,7 @@ def setup_staff_instruments_tools(mcp, client: MuseScoreClient):
             staff: Staff number (0-based)
             instrument_id: ID of the new instrument sound
         """
-        return await client.send_command("setInstrumentSound", {
+        return await run_and_format_response(client, "setInstrumentSound", {
             "staff": staff,
             "instrumentId": instrument_id
         })
