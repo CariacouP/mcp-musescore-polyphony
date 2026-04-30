@@ -46,7 +46,7 @@ MuseScore {
             case "syncStateToSelection":    return syncStateToSelection();
             case "ping":                    return "pong";
             case "undo":                    return undo();
-            case "goToBeginningOfScore":    return goToBeginningOfScore();
+            case "goToBeginningOfScore":    return goToBeginningOfScore(command.params);
             case "processSequence":         return processSequence(command.params);
 
             // Navigation
@@ -251,13 +251,13 @@ MuseScore {
         });
     }
 
-    function goToBeginningOfScore() {
+    function goToBeginningOfScore(params) {
         var response = initCursorState();
         return { 
             success: true, 
             message: response, 
             currentSelection: selectionState,
-            currentScore: getScoreSummary()
+            currentScore: params && (params.verbose !== "false" && params.verbose !== false) ? getScoreSummary() : null
         };
     }
 
@@ -370,7 +370,7 @@ MuseScore {
         return { 
             success: true, 
             currentSelection: selectionState, 
-            currentScore: params && params.verbose !== "false" ? getScoreSummary() : null
+            currentScore: params && (params.verbose !== "false" && params.verbose !== false) ? getScoreSummary() : null
         };
     }
 
