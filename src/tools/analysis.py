@@ -1,0 +1,282 @@
+"""Analysis tools for MuseScore MCP, including harmony rules checking."""
+
+from typing import List, Dict, Any, Optional
+from ..client import MuseScoreClient
+from ..utils.response_formatter import run_and_format_response
+
+def setup_analysis_tools(mcp, client: MuseScoreClient):
+    """Setup analysis tools."""
+
+    def sgn(x: int) -> int:
+        if x > 0: return 1
+        if x < 0: return -1
+        return 0
+
+    def is_between(note1: dict, note2: dict, n: dict) -> bool:
+        """Test if pitch of note n is between note1 and note2."""
+        p1, p2, pn = note1["pitchMidi"], note2["pitchMidi"], n["pitchMidi"]
+        if p1 > p2:
+            return pn < p1 and pn > p2
+        else:
+            return pn < p2 and pn > p1
+
+    def is_augmented_int(note1: dict, note2: dict) -> bool:
+        dtpc = note2["tpc"] - note1["tpc"]
+        dpitch = note2["pitchMidi"] - note1["pitchMidi"]
+        
+        if sgn(dtpc) != sgn(dpitch):
+            return False
+            
+        dtpc = abs(dtpc)
+        dpitch = abs(dpitch) % 12
+        
+        if dtpc < 6: return False
+        if dtpc == 7 and dpitch == 1: return True
+        if dtpc == 9 and dpitch == 3: return True
+        if dtpc == 11 and dpitch == 5: return True
+        if dtpc == 6 and dpitch == 6: return True
+        if dtpc == 8 and dpitch == 8: return True
+        if dtpc == 10 and dpitch == 10: return True
+        if dtpc == 12 and dpitch == 0: return True
+        
+        return False
+
+    def is_octave(note1: dict, note2: dict) -> bool:
+        dtpc = abs(note2["tpc"] - note1["tpc"])
+        dpitch = abs(note2["pitchMidi"] - note1["pitchMidi"])
+        return dpitch == 12 and dtpc == 0
+
+    @mcp.tool()
+    async def check_harmony_rules(start_measure: Optional[int] = None, end_measure: Optional[int] = None) -> str:
+        """Analyze the current score for harmony errors based on Lovelock's rules.
+        
+        Checks for parallel 5ths, parallel 8ths, augmented/diminished melodic intervals,
+        and unresolved jumps.
+        
+        Args:
+            start_measure: Optional. If provided, only returns errors from this measure onwards.
+            end_measure: Optional. If provided, only returns errors up to this measure.
+            
+        Returns:
+            A Markdown formatted string detailing any found violations.
+        """
+        response = await client.send_command("getScore")
+        if response.get("status") != "success" or "result" not in response or "analysis" not in response["result"]:
+            return f"Error retrieving score: {response.get('message', 'Unknown error')}"
+            
+        score_data = response["result"]["analysis"]
+        staves = score_data.get("staves", [])
+        num_staves = len(staves)
+        
+        # Track data: dict of lists of notes. Key is track index (staff * 4 + voice)
+        # Note structure: {"pitchMidi": x, "tpc": y, "tick": t, "measure": m}
+        
+        # We need a timeline of notes and rests per track.
+        tracks = {}
+        for staff_idx in range(num_staves):
+            for voice in range(4):
+                tracks[staff_idx * 4 + voice] = []
+
+        # We will populate tracks with elements, sorted by tick
+        for measure_data in score_data.get("measures", []):
+            measure_num = measure_data["measure"]
+            for staff_idx in range(num_staves):
+                staff_key = f"staff{staff_idx}"
+                elements = measure_data.get("elements", {}).get(staff_key, [])
+                for el in elements:
+                    if el.get("name") in ["Chord", "Rest"]:
+                        voice = el.get("voice", 0)
+                        track = staff_idx * 4 + voice
+                        
+                        if el["name"] == "Chord" and el.get("notes"):
+                            # The plugin takes the top note of the chord (notes[notes.length-1] in QML)
+                            # But let's take the highest pitch or the last one.
+                            # In QML it was `var note = notes[notes.length-1];`
+                            note = el["notes"][-1]
+                            tracks[track].append({
+                                "type": "note",
+                                "pitchMidi": note["pitchMidi"],
+                                "tpc": note["tpc"],
+                                "pitchName": note.get("pitchName", ""),
+                                "tick": el.get("startTick", 0),
+                                "measure": measure_num
+                            })
+                        elif el["name"] == "Rest":
+                            tracks[track].append({
+                                "type": "rest",
+                                "tick": el.get("startTick", 0),
+                                "measure": measure_num
+                            })
+
+        errors = []
+        
+        # Pass 1 & 2 preparation: create sequences of valid notes per track
+        track_notes = {}
+        for t, elements in tracks.items():
+            # sort by tick just in case
+            elements = sorted(elements, key=lambda e: e["tick"])
+            notes_only = []
+            for el in elements:
+                if el["type"] == "note":
+                    # skip repeated pitches for harmony check in Pass 1 as done by `curNote[track].pitch != note.pitch`
+                    if not notes_only or notes_only[-1]["pitchMidi"] != el["pitchMidi"]:
+                        notes_only.append(el)
+            track_notes[t] = notes_only
+
+        # Pass 1: Voice leading rules
+        for t, notes in track_notes.items():
+            for i in range(1, len(notes)):
+                n1 = notes[i-1]
+                n2 = notes[i]
+                
+                # Check Augmented
+                if is_augmented_int(n1, n2):
+                    errors.append((f"- **Measure {n2['measure']}** (Track {t}): Augmented interval between {n1['pitchName']} and {n2['pitchName']}", n2['measure']))
+                
+                dtpc = n2["tpc"] - n1["tpc"]
+                dpitch = n2["pitchMidi"] - n1["pitchMidi"]
+                same_sgn = sgn(dtpc) == sgn(dpitch)
+                
+                abs_dtpc = abs(dtpc)
+                abs_dpitch = abs(dpitch) % 12
+                
+                # Diminished 4th or 7th
+                if not same_sgn:
+                    if abs_dtpc == 8 and abs_dpitch == 4:
+                        errors.append((f"- **Measure {n2['measure']}** (Track {t}): Diminished 4th between {n1['pitchName']} and {n2['pitchName']}", n2['measure']))
+                    elif abs_dtpc == 9 and abs_dpitch == 9:
+                        errors.append((f"- **Measure {n2['measure']}** (Track {t}): Diminished 7th between {n1['pitchName']} and {n2['pitchName']}", n2['measure']))
+                
+                # 7th and larger
+                if abs(dpitch) > 9 and abs(dpitch) != 12 and abs_dtpc < 6:
+                    errors.append((f"- **Measure {n2['measure']}** (Track {t}): Leap of 7th, 9th or larger", n2['measure']))
+
+                if i >= 2:
+                    n0 = notes[i-2]
+                    
+                    # Diminished 5th resolution
+                    dtpc_01 = n1["tpc"] - n0["tpc"]
+                    dpitch_01 = n1["pitchMidi"] - n0["pitchMidi"]
+                    if sgn(dtpc_01) != sgn(dpitch_01):
+                        if abs(dtpc_01) == 6 and (abs(dpitch_01) % 12) == 6:
+                            if not is_between(n0, n1, n2):
+                                errors.append((f"- **Measure {n1['measure']}** (Track {t}): Diminished 5th not followed by note within interval", n1['measure']))
+
+                    # 6th resolution
+                    same_sgn_01 = sgn(dtpc_01) == sgn(dpitch_01)
+                    a_dtpc = abs(dtpc_01)
+                    a_dpitch = abs(dpitch_01) % 12
+                    
+                    if ((a_dtpc == 11 and a_dpitch == 7 and not same_sgn_01) or
+                        (a_dtpc == 4 and a_dpitch == 8 and not same_sgn_01) or
+                        (a_dtpc == 3 and a_dpitch == 9 and same_sgn_01)):
+                        if not is_between(n0, n1, n2):
+                            errors.append((f"- **Measure {n1['measure']}** (Track {t}): 6th better avoided, must be followed by note within interval", n1['measure']))
+                        else:
+                            errors.append((f"- **Measure {n1['measure']}** (Track {t}): 6th better avoided", n1['measure']))
+
+                    # Octave resolution
+                    if is_octave(n1, n2) and not is_between(n1, n2, n0):
+                        errors.append((f"- **Measure {n2['measure']}** (Track {t}): Octave should be preceded by note within compass", n2['measure']))
+                    if is_octave(n0, n1) and not is_between(n0, n1, n2):
+                        errors.append((f"- **Measure {n1['measure']}** (Track {t}): Octave should be followed by note within compass", n1['measure']))
+
+        # Pass 2: Parallels (using simultaneous ticks)
+        # Rebuild elements ordered by tick across all tracks to find simultaneous movements
+        all_ticks = set()
+        for t, els in tracks.items():
+            for el in els:
+                all_ticks.add(el["tick"])
+                
+        sorted_ticks = sorted(list(all_ticks))
+        
+        # State: last note played on each track
+        cur_note = {t: None for t in tracks.keys()}
+        prev_note = {t: None for t in tracks.keys()}
+        # State: is track currently resting? (Starts as True before first note)
+        cur_rest = {t: True for t in tracks.keys()}
+        prev_rest = {t: True for t in tracks.keys()}
+        # State: did track change pitch this tick?
+        changed = {t: False for t in tracks.keys()}
+        
+        track_elements = {t: {el["tick"]: el for el in els} for t, els in tracks.items()}
+        
+        for tick in sorted_ticks:
+            for t in tracks.keys():
+                el = track_elements[t].get(tick)
+                if el:
+                    if el["type"] == "note":
+                        if not cur_rest[t] and cur_note[t] and cur_note[t]["pitchMidi"] != el["pitchMidi"]:
+                            prev_note[t] = cur_note[t]
+                            prev_rest[t] = cur_rest[t]
+                            changed[t] = True
+                        elif cur_rest[t]:
+                            # Was resting, now a note. We don't consider this a pitch change for parallel detection
+                            # since it requires previous note
+                            changed[t] = False
+                        else:
+                            # Same pitch, no change
+                            changed[t] = False
+                            
+                        cur_rest[t] = False
+                        cur_note[t] = el
+                    elif el["type"] == "rest":
+                        if not cur_rest[t]:
+                            prev_note[t] = cur_note[t]
+                            prev_rest[t] = cur_rest[t]
+                            cur_rest[t] = True
+                            changed[t] = False
+                else:
+                    changed[t] = False
+            
+            # Compare all pairs of tracks that changed this tick
+            track_indices = list(tracks.keys())
+            for i, t1 in enumerate(track_indices):
+                if not changed[t1] or prev_rest[t1]:
+                    continue
+                dir1 = sgn(cur_note[t1]["pitchMidi"] - prev_note[t1]["pitchMidi"])
+                if dir1 == 0: continue
+                
+                for j in range(i+1, len(track_indices)):
+                    t2 = track_indices[j]
+                    if changed[t2] and not prev_rest[t2]:
+                        dir2 = sgn(cur_note[t2]["pitchMidi"] - prev_note[t2]["pitchMidi"])
+                        if dir1 == dir2: # Parallel motion
+                            cint = cur_note[t1]["pitchMidi"] - cur_note[t2]["pitchMidi"]
+                            pint = prev_note[t1]["pitchMidi"] - prev_note[t2]["pitchMidi"]
+                            
+                            cint_mod = abs(cint % 12)
+                            
+                            # Check 5th (mod 12 == 7)
+                            if cint_mod == 7:
+                                if cint == pint:
+                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel 5th", cur_note[t1]['measure']))
+                                elif dir1 == 1 and abs(pint) < abs(cint):
+                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Hidden 5th", cur_note[t1]['measure']))
+                                    
+                            # Check 8ve (mod 12 == 0)
+                            if cint_mod == 0:
+                                if cint == pint:
+                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel 8ve", cur_note[t1]['measure']))
+                                elif dir1 == 1 and abs(pint) < abs(cint):
+                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Hidden 8ve", cur_note[t1]['measure']))
+
+        # Filter errors by measure range if provided
+        filtered_errors = []
+        for err, m_num in errors:
+            if start_measure is not None and m_num < start_measure:
+                continue
+            if end_measure is not None and m_num > end_measure:
+                continue
+            filtered_errors.append(err)
+
+        if not filtered_errors:
+            msg = "✅ No harmony rules violations found"
+            if start_measure or end_measure:
+                msg += f" in measures {start_measure or 1} to {end_measure or 'end'}"
+            return msg + "!"
+            
+        report = "### Harmony Rule Violations\n\n"
+        report += "\n".join(filtered_errors)
+        return report
+

@@ -59,3 +59,6 @@ Ne pas modifier le plugin côté MuseScore (musescore-mcp-websocket.qml). Le flu
 Ne pas modifier les arguments d'entrée (signatures) des outils existants définis par @mcp.tool(). Le LLM doit continuer à appeler les outils exactement comme avant.
 
 Ne pas toucher aux outils d'écriture/modification (add_note, etc.) durant cette phase d'implémentation.
+
+Workflow d'analyse de l'harmonie :
+Avant de rendre une analyse finale ou de confirmer une modification à l'utilisateur, l'agent DOIT toujours appeler l'outil `check_harmony_rules` en spécifiant les paramètres `start_measure` et `end_measure`. Cela limite la vérification exclusivement aux mesures sur lesquelles il travaille, lui permettant d'auto-corriger ses modifications sans être submergé par les erreurs du reste de la partition.

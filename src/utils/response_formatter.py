@@ -13,7 +13,14 @@ async def run_and_format_response(client, action: str, params: Optional[Dict[str
     if not isinstance(res, dict):
         return res
 
-    if res.get("success"):
+    # Handle wrapped WebSocket responses from the QML plugin
+    is_success = res.get("status") == "success" or res.get("success") is True
+    
+    if is_success:
+        # Extract the inner result payload to process
+        if "result" in res and isinstance(res["result"], dict):
+            res = res["result"]
+            
         output = []
 
         # Include any text message from the server

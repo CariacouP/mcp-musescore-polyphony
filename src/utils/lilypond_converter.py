@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 logger = logging.getLogger("LilyPondConverter")
 
@@ -106,10 +106,11 @@ def ticks_to_spacers(ticks: int) -> List[str]:
         
     return spacers
 
-def process_element(element: Dict[str, Any]) -> str:
+def process_element(element: Dict[str, Any]) -> Tuple[str, str]:
     """
     Process a single JSON element dictionary into LilyPond syntax.
     Handles 'Chord' (with notes) and 'Rest'.
+    Returns a tuple (lilypond_string, lyric_token).
     """
     try:
         elem_name = element.get("name", "")
@@ -117,12 +118,13 @@ def process_element(element: Dict[str, Any]) -> str:
         lily_duration = ticks_to_lilypond_duration(duration_ticks)
 
         if elem_name == "Rest":
-            return f"r{lily_duration}"
+            return f"r{lily_duration}", ""
         
         elif elem_name == "Chord":
             notes = element.get("notes", [])
+            lyrics = element.get("lyrics", [])
             if not notes:
-                return f"r{lily_duration}"
+                return f"r{lily_duration}", ""
             
             lily_notes = []
             for note in notes:
@@ -132,17 +134,24 @@ def process_element(element: Dict[str, Any]) -> str:
                     lily_notes.append(midi_to_lilypond_pitch(pitch, tpc))
             
             if not lily_notes:
-                return f"r{lily_duration}"
-            elif len(lily_notes) == 1:
-                return f"{lily_notes[0]}{lily_duration}"
+                return f"r{lily_duration}", ""
+            
+            lyric_token = "_"
+            if lyrics and len(lyrics) > 0:
+                clean_lyric = " | ".join(str(l).replace('"', '').replace('\\', '') for l in lyrics)
+                if clean_lyric.strip():
+                    lyric_token = f'"{clean_lyric}"'
+            
+            if len(lily_notes) == 1:
+                return f"{lily_notes[0]}{lily_duration}", lyric_token
             else:
                 joined_notes = " ".join(lily_notes)
-                return f"<{joined_notes}>{lily_duration}"
+                return f"<{joined_notes}>{lily_duration}", lyric_token
         else:
-            return ""  # Ignore other elements without crashing
+            return "", ""  # Ignore other elements without crashing
     except Exception as e:
         logger.error(f"Error parsing element: {e}")
-        return ""
+        return "", ""
 
 def json_to_lilypond(score_data: Dict[str, Any]) -> str:
     """
@@ -166,13 +175,19 @@ def json_to_lilypond(score_data: Dict[str, Any]) -> str:
             staves_info = score_data.get("staves", [])
             staff_names = [st.get("name") for st in staves_info if st.get("visible", True)]
             
-            measure = score_data.get("measure", {})
-            if not measure:
-                measures = score_data.get("measures", [])
-                if measures:
-                    measure = measures[0]  # Take only the first measure for demonstration
-                    
-            elements_by_staff = measure.get("elements", {})
+            elements_by_staff = {}
+            measures_list = []
+            if "measure" in score_data and score_data["measure"]:
+                measures_list = [score_data["measure"]]
+            elif "measures" in score_data:
+                measures_list = score_data["measures"]
+                
+            for m in measures_list:
+                m_elements = m.get("elements", {})
+                for staff_name, elems in m_elements.items():
+                    if staff_name not in elements_by_staff:
+                        elements_by_staff[staff_name] = []
+                    elements_by_staff[staff_name].extend(elems)
             
             if not staff_names:
                 staff_names = list(elements_by_staff.keys())
@@ -216,6 +231,7 @@ def json_to_lilypond(score_data: Dict[str, Any]) -> str:
                 v_elems.sort(key=lambda x: x.get("startTick", 0))
                 
                 formatted_elems = []
+                voice_lyrics = []
                 current_tick = base_tick
                 
                 for e in v_elems:
@@ -228,9 +244,11 @@ def json_to_lilypond(score_data: Dict[str, Any]) -> str:
                         formatted_elems.extend(spacers)
                         current_tick = e_tick
                     
-                    processed = process_element(e)
-                    if processed:
-                        formatted_elems.append(processed)
+                    lily_str, lyric_token = process_element(e)
+                    if lily_str:
+                        formatted_elems.append(lily_str)
+                    if lyric_token:
+                        voice_lyrics.append(lyric_token)
                     
                     # Advance internal clock by the element's explicit duration length
                     duration = e.get("durationTicks", 480)
@@ -241,7 +259,12 @@ def json_to_lilypond(score_data: Dict[str, Any]) -> str:
                 
                 cmd = voice_commands.get(v_idx, "\\voiceOne")
                 voice_str = f"{cmd} " + " ".join(formatted_elems)
-                voice_strings.append(f"      \\new Voice {{ {voice_str} }}")
+                
+                if voice_lyrics and any(l != "_" for l in voice_lyrics):
+                    lyrics_str = " ".join(voice_lyrics)
+                    voice_strings.append(f"      \\new Voice {{ {voice_str} }}\n      \\addlyrics {{ {lyrics_str} }}")
+                else:
+                    voice_strings.append(f"      \\new Voice {{ {voice_str} }}")
             
             # Use LilyPond's double backslash separator for multiple concurrent voices
             voices_combined = " \\\\\n".join(voice_strings)

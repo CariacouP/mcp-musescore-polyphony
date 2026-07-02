@@ -137,8 +137,9 @@ This MCP server provides comprehensive MuseScore control. **🌟 NEW in this for
 - `add_lyrics(lyrics_list)` - Batch add lyrics to multiple notes
 - `set_title(title)` - Set score title
 
-### **Score Information**
+### **Score Information & Analysis**
 - `get_score()` - Get complete score analysis and structure
+- `check_harmony_rules(start_measure, end_measure)` - 🌟 Analyze score for harmony errors (parallel 5ths/8ves, augmented intervals, etc.)
 - `ping_musescore()` - Test connection to MuseScore
 - `connect_to_musescore()` - Establish WebSocket connection
 
@@ -243,6 +244,7 @@ mcp-agents-demo/
     │   └── websocket_client.py
     ├── tools/                          # MCP tool implementations
     │   ├── __init__.py
+    │   ├── analysis.py                 # Score analysis and harmony rules checking
     │   ├── connection.py               # Connection management tools
     │   ├── navigation.py               # Score navigation tools
     │   ├── notes_measures.py           # Note and measure manipulation

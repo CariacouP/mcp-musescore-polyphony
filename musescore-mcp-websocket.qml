@@ -235,6 +235,16 @@ MuseScore {
                     pitchName: getTpcName(note.tpc)
                 });
             }
+            base.lyrics = [];
+            if (element.lyrics) {
+                var lyrKeys = Object.keys(element.lyrics);
+                for (var l = 0; l < lyrKeys.length; l++) {
+                    var lyrEl = element.lyrics[lyrKeys[l]];
+                    if (lyrEl && lyrEl.text) {
+                        base.lyrics.push(lyrEl.text);
+                    }
+                }
+            }
         }
                 
         return base;
