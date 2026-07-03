@@ -83,6 +83,15 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
         return await run_and_format_response(client, "deleteSelection", params)
 
     @mcp.tool()
+    async def clear_annotations(prefix: str = "@"):
+        """Clear all StaffText and SystemText annotations that start with the specified prefix.
+        
+        Args:
+            prefix: The text prefix that identifies annotations meant for the AI (default: "@")
+        """
+        return await run_and_format_response(client, "clearAnnotations", {"prefix": prefix})
+
+    @mcp.tool()
     async def undo():
         """Undo the last action."""
         return await run_and_format_response(client, "undo")

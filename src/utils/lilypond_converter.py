@@ -117,8 +117,38 @@ def process_element(element: Dict[str, Any]) -> Tuple[str, str]:
         duration_ticks = element.get("durationTicks", 480)
         lily_duration = ticks_to_lilypond_duration(duration_ticks)
 
-        if elem_name == "Rest":
-            return f"r{lily_duration}", ""
+        is_tie = element.get("isTie", False)
+        is_tuplet = element.get("isTuplet", False)
+        tie_str = "~" if is_tie else ""
+        tuplet_suffix = " %{ tuplet %}" if is_tuplet else ""
+
+        if elem_name == "TimeSig":
+            timesig = element.get("timesig", "")
+            return f"\\time {timesig}", ""
+            
+        elif elem_name == "KeySig":
+            key_val = element.get("key", 0)
+            key_map = {
+                -7: "ces \\major", -6: "ges \\major", -5: "des \\major", -4: "as \\major", -3: "es \\major", -2: "bes \\major", -1: "f \\major",
+                0: "c \\major", 1: "g \\major", 2: "d \\major", 3: "a \\major", 4: "e \\major", 5: "b \\major", 6: "fis \\major", 7: "cis \\major"
+            }
+            key_str = key_map.get(key_val, "c \\major")
+            return f"\\key {key_str}", ""
+            
+        elif elem_name == "Dynamic":
+            dyn = element.get("dynamicType", "")
+            if dyn:
+                return f"\\{dyn.strip()}", ""
+            return "", ""
+
+        elif elem_name in ["StaffText", "SystemText"]:
+            txt = element.get("text", "").strip()
+            if txt:
+                return f"%{{ {txt} %}}", ""
+            return "", ""
+
+        elif elem_name == "Rest":
+            return f"r{lily_duration}{tuplet_suffix}", ""
         
         elif elem_name == "Chord":
             notes = element.get("notes", [])
@@ -143,10 +173,10 @@ def process_element(element: Dict[str, Any]) -> Tuple[str, str]:
                     lyric_token = f'"{clean_lyric}"'
             
             if len(lily_notes) == 1:
-                return f"{lily_notes[0]}{lily_duration}", lyric_token
+                return f"{lily_notes[0]}{lily_duration}{tie_str}{tuplet_suffix}", lyric_token
             else:
                 joined_notes = " ".join(lily_notes)
-                return f"<{joined_notes}>{lily_duration}", lyric_token
+                return f"<{joined_notes}>{lily_duration}{tie_str}{tuplet_suffix}", lyric_token
         else:
             return "", ""  # Ignore other elements without crashing
     except Exception as e:

@@ -72,6 +72,8 @@ MuseScore {
             case "appendMeasure":           return appendMeasure(command.params);
             case "insertMeasure":           return insertMeasure(command.params);
             case "deleteSelection":         return deleteSelection(command.params);
+            case "clearAnnotations":        return clearAnnotations(command.params);
+            case "exploreElements":         return exploreElements(command.params);
 
             // Staff & Instruments
             case "addInstrument":           return addInstrument(command.params);
@@ -214,14 +216,27 @@ MuseScore {
 
     function processElement(element) {
         if (!element) return null;
-        if (element.name !== "Chord" && element.name !== "Rest") return null;
+        var validTypes = ["Chord", "Rest", "TimeSig", "KeySig", "Dynamic", "StaffText", "SystemText"];
+        if (validTypes.indexOf(element.name) === -1) return null;
 
         var base = {
             name: element.name,
+            type: element.type || "UnknownType",
             durationTicks: element.actualDuration ? element.actualDuration.ticks : 0,
             isTie: element.tieForward ? true : false,
             isTuplet: element.tuplet ? true : false
         };
+
+        if (element.name === "TimeSig") {
+            if (element.timesig) base.timesig = element.timesig.numerator + "/" + element.timesig.denominator;
+            else if (element.sig) base.timesig = element.sig;
+        } else if (element.name === "KeySig") {
+            base.key = element.key;
+        } else if (element.name === "Dynamic") {
+            base.dynamicType = element.dynamicType || element.text;
+        } else if (element.name === "StaffText" || element.name === "SystemText") {
+            base.text = element.text;
+        }
 
         if (element.name === "Chord") {
             base.notes = [];
@@ -939,6 +954,89 @@ MuseScore {
         });
     }
 
+    function clearAnnotations(params) {
+        return executeWithUndo(function() {
+            var prefix = params && params.prefix ? params.prefix : "//";
+            var count = 0;
+            
+            var cursor = curScore.newCursor();
+            cursor.rewind(0);
+            
+            while (cursor.segment) {
+                var annots = cursor.segment.annotations;
+                if (annots) {
+                    // Workaround for MS4 QML arrays missing length property
+                    var annotArray = [];
+                    for (var i = 0; i < 20; i++) {
+                        if (annots[i]) annotArray.push(annots[i]);
+                        else break;
+                    }
+                    for (var j = annotArray.length - 1; j >= 0; j--) {
+                        var annot = annotArray[j];
+                        if (annot && (annot.name === "StaffText" || annot.name === "SystemText")) {
+                            if (annot.text && annot.text.indexOf(prefix) === 0) {
+                                removeElement(annot);
+                                count++;
+                            }
+                        }
+                    }
+                }
+                cursor.next();
+            }
+            
+            return {
+                success: true,
+                message: "Deleted " + count + " annotation(s) starting with " + prefix
+            };
+        });
+    }
+
+    function exploreElements(params) {
+        if (!curScore) return { error: "No score open" };
+        var tree = [];
+        var measure = curScore.firstMeasure;
+        var mCount = 0;
+        
+        while (measure && mCount < 2) {
+            mCount++;
+            var mData = { tick: Number(measure.tick), segments: [] };
+            
+            var seg = measure.firstSegment;
+            var sCount = 0;
+            while (seg && sCount < 10) {
+                sCount++;
+                var sData = { type: Number(seg.segmentType), annotations: [], tracks: [] };
+                
+                try {
+                    if (seg.annotations) {
+                        for (var a = 0; a < 10; a++) {
+                            var an = seg.annotations[a];
+                            if (an) sData.annotations.push(String(an.name));
+                        }
+                    }
+                } catch(e) {}
+                
+                for (var t = 0; t < curScore.nstaves * 4; t++) {
+                    try {
+                        var tr = seg.elementAt(t);
+                        if (tr) sData.tracks.push(String(tr.name));
+                    } catch(e) {}
+                }
+                
+                mData.segments.push(sData);
+                var nextSeg = seg.next;
+                if (nextSeg === seg) break;
+                seg = nextSeg;
+            }
+            
+            tree.push(mData);
+            var nextM = measure.nextMeasure;
+            if (nextM === measure) break;
+            measure = nextM;
+        }
+        return tree;
+    }
+
     // ========================================
     // STAFF & INSTRUMENT OPERATIONS
     // ========================================
@@ -1085,6 +1183,21 @@ MuseScore {
                     var measureIdx = measureBoundaries.filter(function(tick) {
                         return tick <= currentSegment.tick;
                     }).length - 1;
+
+                    // Extract annotations (like Dynamics, Text, Fermata)
+                    if (currentSegment.annotations) {
+                        for (var a = 0; a < 20; a++) {
+                            var annot = currentSegment.annotations[a];
+                            if (!annot) break;
+                            
+                            var processedAnnot = processElement(annot);
+                            if (processedAnnot) {
+                                processedAnnot.startTick = currentSegment.tick;
+                                processedAnnot.voice = 0; // Default voice for annotations
+                                score.measures[measureIdx].elements[`staff${k}`].push(processedAnnot);
+                            }
+                        }
+                    }
 
                     for (var v = 0; v < 4; v++) {
                         var track = k * 4 + v;
