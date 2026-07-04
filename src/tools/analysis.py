@@ -293,21 +293,40 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                             cint = cur_note[t1]["pitchMidi"] - cur_note[t2]["pitchMidi"]
                             pint = prev_note[t1]["pitchMidi"] - prev_note[t2]["pitchMidi"]
                             
-                            cint_mod = abs(cint % 12)
+                            cint_mod = abs(cint) % 12
                             
+                            # Determine if voices are extreme (outer) voices, and if top voice moves by step
+                            active_tracks_now = [t for t in track_indices if not cur_rest[t] and cur_note[t]]
+                            active_tracks_now.sort()
+                            is_extreme = (len(active_tracks_now) >= 2 and t1 == active_tracks_now[0] and t2 == active_tracks_now[-1])
+                            upper_voice_step = abs(cur_note[t1]["pitchMidi"] - prev_note[t1]["pitchMidi"]) <= 2
+
+                            # Check Unison (cint == 0)
+                            if cint == 0:
+                                if pint == 0:
+                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel Unison", cur_note[t1]['measure']))
+                                else:
+                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct Unison", cur_note[t1]['measure']))
+
                             # Check 5th (mod 12 == 7)
                             if cint_mod == 7:
                                 if cint == pint:
                                     errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel 5th", cur_note[t1]['measure']))
-                                elif dir1 == 1 and abs(pint) < abs(cint):
-                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Hidden 5th", cur_note[t1]['measure']))
+                                else:
+                                    if is_extreme:
+                                        errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 5th between extreme voices", cur_note[t1]['measure']))
+                                    elif not upper_voice_step:
+                                        errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 5th (upper voice leaps)", cur_note[t1]['measure']))
                                     
-                            # Check 8ve (mod 12 == 0)
-                            if cint_mod == 0:
+                            # Check 8ve (mod 12 == 0 and cint != 0)
+                            if cint_mod == 0 and cint != 0:
                                 if cint == pint:
                                     errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel 8ve", cur_note[t1]['measure']))
-                                elif dir1 == 1 and abs(pint) < abs(cint):
-                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Hidden 8ve", cur_note[t1]['measure']))
+                                else:
+                                    if is_extreme:
+                                        errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 8ve between extreme voices", cur_note[t1]['measure']))
+                                    elif not upper_voice_step:
+                                        errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 8ve (upper voice leaps)", cur_note[t1]['measure']))
 
         # Filter errors by measure range if provided and remove exact duplicates
         filtered_errors = []
