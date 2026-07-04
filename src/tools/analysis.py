@@ -136,6 +136,18 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                 tonic_pc = key_map[k_clean]
         
         if tonic_pc is None:
+            # Try to get KeySig from the score elements
+            key_sig_val = None
+            for measure_data in score_data.get("measures", []):
+                for staff_idx in range(num_staves):
+                    staff_key = f"staff{staff_idx}"
+                    for el in measure_data.get("elements", {}).get(staff_key, []):
+                        if el.get("name") == "KeySig" and "key" in el:
+                            key_sig_val = el["key"]
+                            break
+                    if key_sig_val is not None: break
+                if key_sig_val is not None: break
+                
             # Infer from last note in the lowest active track
             last_tick = -1
             for t, els in tracks.items():
@@ -150,7 +162,18 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                         if el["type"] == "note" and el["tick"] == last_tick:
                             notes_at_last_tick.append(el["pitchMidi"])
                 if notes_at_last_tick:
-                    tonic_pc = min(notes_at_last_tick) % 12
+                    bass_pc = min(notes_at_last_tick) % 12
+                    if key_sig_val is not None:
+                        major_tonic = (key_sig_val * 7) % 12
+                        minor_tonic = (major_tonic - 3) % 12
+                        if bass_pc == major_tonic:
+                            tonic_pc = major_tonic
+                        elif bass_pc == minor_tonic:
+                            tonic_pc = minor_tonic
+                        else:
+                            tonic_pc = bass_pc
+                    else:
+                        tonic_pc = bass_pc
         
         if tonic_pc is None:
             tonic_pc = 0
@@ -348,10 +371,22 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                     if active_pcs.count(third_pc) >= 2:
                         m = cur_note[active_tracks[0]]['measure']
                         errors.append((f"- **Measure {m}**: Doubled third in root position triad", m))
+                    if chord_info["inversion"] == 2:
+                        m = cur_note[active_tracks[0]]['measure']
+                        errors.append((f"- **Measure {m}**: 6/4 chord (2nd inversion) is unstable, must be passing or cadential", m))
+
+            # Check false relations
+            track_indices = list(tracks.keys())
+            for t1 in track_indices:
+                if changed[t1] and cur_note[t1]:
+                    for t2 in track_indices:
+                        if t1 != t2 and prev_note[t2] and not prev_rest[t2]:
+                            if (cur_note[t1]["tpc"] % 7 == prev_note[t2]["tpc"] % 7) and (cur_note[t1]["tpc"] != prev_note[t2]["tpc"]):
+                                m = cur_note[t1]['measure']
+                                errors.append((f"- **Measure {m}** (Tracks {t1}, {t2}): False relation ({prev_note[t2]['pitchName']} followed by {cur_note[t1]['pitchName']})", m))
 
             
             # Compare all pairs of tracks that changed this tick
-            track_indices = list(tracks.keys())
             for i, t1 in enumerate(track_indices):
                 if not changed[t1] or prev_rest[t1]:
                     continue

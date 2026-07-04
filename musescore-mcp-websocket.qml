@@ -231,7 +231,7 @@ MuseScore {
             if (element.timesig) base.timesig = element.timesig.numerator + "/" + element.timesig.denominator;
             else if (element.sig) base.timesig = element.sig;
         } else if (element.name === "KeySig") {
-            base.key = element.key;
+            base.key = element.keySignature !== undefined ? element.keySignature : (element.sig !== undefined ? element.sig : element.key);
         } else if (element.name === "Dynamic") {
             base.dynamicType = element.dynamicType || element.text;
         } else if (element.name === "StaffText" || element.name === "SystemText") {
