@@ -46,8 +46,25 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
         dpitch = abs(note2["pitchMidi"] - note1["pitchMidi"])
         return dpitch == 12 and dtpc == 0
 
+    def get_triad_info(pitches: List[int]) -> Optional[Dict[str, int]]:
+        if not pitches: return None
+        bass_pc = min(pitches) % 12
+        pcs = sorted(list(set([p % 12 for p in pitches])))
+        if len(pcs) != 3: return None
+        intervals = [(pc - bass_pc) % 12 for pc in pcs]
+        intervals.sort()
+        if intervals == [0, 3, 7] or intervals == [0, 4, 7]:
+            return {"inversion": 0, "root": bass_pc, "third": (bass_pc + intervals[1]) % 12, "fifth": (bass_pc + 7) % 12}
+        elif intervals == [0, 3, 8] or intervals == [0, 4, 9]:
+            root = (bass_pc + intervals[2]) % 12
+            return {"inversion": 1, "root": root, "third": bass_pc, "fifth": (bass_pc + intervals[1]) % 12}
+        elif intervals == [0, 5, 8] or intervals == [0, 5, 9]:
+            root = (bass_pc + intervals[1]) % 12
+            return {"inversion": 2, "root": root, "third": (bass_pc + intervals[2]) % 12, "fifth": bass_pc}
+        return None
+
     @mcp.tool()
-    async def check_harmony_rules(start_measure: Optional[int] = None, end_measure: Optional[int] = None) -> str:
+    async def check_harmony_rules(start_measure: Optional[int] = None, end_measure: Optional[int] = None, key: Optional[str] = None) -> str:
         """Analyze the current score for harmony errors based on Lovelock's rules.
         
         Checks for parallel 5ths, parallel 8ths, augmented/diminished melodic intervals,
@@ -109,6 +126,36 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                             })
 
         errors = []
+        
+        # Infer tonality
+        tonic_pc = None
+        if key:
+            key_map = {"c": 0, "c#": 1, "db": 1, "d": 2, "d#": 3, "eb": 3, "e": 4, "f": 5, "f#": 6, "gb": 6, "g": 7, "g#": 8, "ab": 8, "a": 9, "a#": 10, "bb": 10, "b": 11}
+            k_clean = key.lower().replace(" minor", "").replace(" major", "").replace("m", "").strip()
+            if k_clean in key_map:
+                tonic_pc = key_map[k_clean]
+        
+        if tonic_pc is None:
+            # Infer from last note in the lowest active track
+            last_tick = -1
+            for t, els in tracks.items():
+                for el in els:
+                    if el["type"] == "note" and el["tick"] > last_tick:
+                        last_tick = el["tick"]
+            
+            if last_tick >= 0:
+                notes_at_last_tick = []
+                for t, els in tracks.items():
+                    for el in els:
+                        if el["type"] == "note" and el["tick"] == last_tick:
+                            notes_at_last_tick.append(el["pitchMidi"])
+                if notes_at_last_tick:
+                    tonic_pc = min(notes_at_last_tick) % 12
+        
+        if tonic_pc is None:
+            tonic_pc = 0
+            
+        sensible_pc = (tonic_pc - 1) % 12
         
         # Pass 1 & 2 preparation: create sequences of valid notes per track
         track_notes = {}
@@ -200,6 +247,15 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                     if is_octave(n0, n1) and not is_between(n0, n1, n2):
                         errors.append((f"- **Measure {n1['measure']}** (Track {t}): Octave should be followed by note within compass", n1['measure']))
 
+                # Sensible resolution check
+                is_outer = (t == active_track_ids[0] or t == active_track_ids[-1]) if active_track_ids else False
+                if n1["pitchMidi"] % 12 == sensible_pc:
+                    if n2["pitchMidi"] != n1["pitchMidi"] + 1:
+                        if is_outer:
+                            errors.append((f"- **Measure {n1['measure']}** (Track {t}): Sensible in outer voice not resolved to tonic ({n1['pitchName']} -> {n2['pitchName']})", n1['measure']))
+                        else:
+                            errors.append((f"- **Measure {n1['measure']}** (Track {t}): Sensible in inner voice not resolved to tonic ({n1['pitchName']} -> {n2['pitchName']})", n1['measure']))
+
         # Pass 2: Parallels (using simultaneous ticks)
         # Rebuild elements ordered by tick across all tracks to find simultaneous movements
         all_ticks = set()
@@ -275,6 +331,23 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                         if p1 - p2 > 12:
                             m = cur_note[t1]['measure']
                             errors.append((f"- **Measure {m}** (Tracks {t1}, {t2}): Spacing > 1 octave between upper voices ({cur_note[t1]['pitchName']} and {cur_note[t2]['pitchName']})", m))
+
+                # Doubling rules
+                active_pitches = [cur_note[t]["pitchMidi"] for t in active_tracks]
+                active_pcs = [p % 12 for p in active_pitches]
+                
+                # 1. Sensible doubling
+                if active_pcs.count(sensible_pc) >= 2:
+                    m = cur_note[active_tracks[0]]['measure']
+                    errors.append((f"- **Measure {m}**: Doubled leading tone (sensible)", m))
+                
+                # 2. Third doubling in root position
+                chord_info = get_triad_info(active_pitches)
+                if chord_info and chord_info["inversion"] == 0:
+                    third_pc = chord_info["third"]
+                    if active_pcs.count(third_pc) >= 2:
+                        m = cur_note[active_tracks[0]]['measure']
+                        errors.append((f"- **Measure {m}**: Doubled third in root position triad", m))
 
             
             # Compare all pairs of tracks that changed this tick
