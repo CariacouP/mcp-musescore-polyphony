@@ -123,8 +123,27 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                         notes_only.append(el)
             track_notes[t] = notes_only
 
-        # Pass 1: Voice leading rules
+        active_track_ids = [t for t, notes in track_notes.items() if len(notes) > 0]
+        active_track_ids.sort()
+        
+        ambitus_limits = {}
+        if len(active_track_ids) == 4:
+            ambitus_limits = {
+                active_track_ids[0]: (60, 81, "Soprano"),
+                active_track_ids[1]: (53, 74, "Alto"),
+                active_track_ids[2]: (48, 69, "Tenor"),
+                active_track_ids[3]: (40, 64, "Bass"),
+            }
+
+        # Pass 1: Voice leading rules & Ambitus
         for t, notes in track_notes.items():
+            # Check Ambitus
+            if t in ambitus_limits:
+                min_pitch, max_pitch, voice_name = ambitus_limits[t]
+                for n in notes:
+                    if n["pitchMidi"] < min_pitch or n["pitchMidi"] > max_pitch:
+                        errors.append((f"- **Measure {n['measure']}** (Track {t}): Out of ambitus for {voice_name} ({n['pitchName']})", n['measure']))
+            
             for i in range(1, len(notes)):
                 n1 = notes[i-1]
                 n2 = notes[i]
@@ -229,6 +248,35 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                 else:
                     changed[t] = False
             
+            # Vertical rules (Voice Crossing and Spacing)
+            note_started_this_tick = any(track_elements[t].get(tick) and track_elements[t].get(tick)["type"] == "note" for t in tracks.keys())
+            if note_started_this_tick:
+                active_tracks = [t for t in tracks.keys() if not cur_rest[t] and cur_note[t]]
+                active_tracks.sort()
+                
+                # Voice crossing
+                for i in range(len(active_tracks)):
+                    for j in range(i+1, len(active_tracks)):
+                        t1 = active_tracks[i]
+                        t2 = active_tracks[j]
+                        p1 = cur_note[t1]["pitchMidi"]
+                        p2 = cur_note[t2]["pitchMidi"]
+                        if p1 < p2:
+                            m = cur_note[t1]['measure']
+                            errors.append((f"- **Measure {m}** (Tracks {t1}, {t2}): Voice crossing ({cur_note[t1]['pitchName']} is below {cur_note[t2]['pitchName']})", m))
+
+                # Spacing (Position ouverte)
+                if len(active_tracks) >= 3:
+                    for i in range(len(active_tracks) - 2):
+                        t1 = active_tracks[i]
+                        t2 = active_tracks[i+1]
+                        p1 = cur_note[t1]["pitchMidi"]
+                        p2 = cur_note[t2]["pitchMidi"]
+                        if p1 - p2 > 12:
+                            m = cur_note[t1]['measure']
+                            errors.append((f"- **Measure {m}** (Tracks {t1}, {t2}): Spacing > 1 octave between upper voices ({cur_note[t1]['pitchName']} and {cur_note[t2]['pitchName']})", m))
+
+            
             # Compare all pairs of tracks that changed this tick
             track_indices = list(tracks.keys())
             for i, t1 in enumerate(track_indices):
@@ -261,14 +309,17 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                                 elif dir1 == 1 and abs(pint) < abs(cint):
                                     errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Hidden 8ve", cur_note[t1]['measure']))
 
-        # Filter errors by measure range if provided
+        # Filter errors by measure range if provided and remove exact duplicates
         filtered_errors = []
+        seen_errors = set()
         for err, m_num in errors:
             if start_measure is not None and m_num < start_measure:
                 continue
             if end_measure is not None and m_num > end_measure:
                 continue
-            filtered_errors.append(err)
+            if err not in seen_errors:
+                filtered_errors.append(err)
+                seen_errors.add(err)
 
         if not filtered_errors:
             msg = "✅ No harmony rules violations found"
