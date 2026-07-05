@@ -54,9 +54,9 @@ S'assurer que le LLM reçoit une arborescence LilyPond valide (ex: << \new Voice
 
 À NE JAMAIS FAIRE :
 
-Ne pas modifier le plugin côté MuseScore (musescore-mcp-websocket.qml). Le flux entrant MuseScore -> Python reste strictement en JSON.
+Ne pas modifier le plugin côté MuseScore (musescore-mcp-websocket.qml) **SAUF** pour le patch d'armure (KeySig) déjà réalisé. Le flux entrant MuseScore -> Python reste strictement en JSON.
 
-Ne pas modifier les arguments d'entrée (signatures) des outils existants définis par @mcp.tool(). Le LLM doit continuer à appeler les outils exactement comme avant.
+Ne pas modifier les arguments d'entrée (signatures) des outils existants définis par @mcp.tool() pour casser la rétrocompatibilité. (L'ajout du paramètre optionnel `key` à `check_harmony_rules` est une exception validée).
 
 Ne pas toucher aux outils d'écriture/modification (add_note, etc.) durant cette phase d'implémentation.
 

@@ -65,14 +65,21 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
 
     @mcp.tool()
     async def check_harmony_rules(start_measure: Optional[int] = None, end_measure: Optional[int] = None, key: Optional[str] = None) -> str:
-        """Analyze the current score for harmony errors based on Lovelock's rules.
+        """Analyze the current score for harmony errors based on classical rules.
         
-        Checks for parallel 5ths, parallel 8ths, augmented/diminished melodic intervals,
-        and unresolved jumps.
+        Checks for:
+        - Parallel 5ths/8ths and direct 5ths/8ths
+        - Voice crossing and spacing (> 1 octave)
+        - Ambitus limits for SATB
+        - Sensible resolution and doubling
+        - Doubled thirds in root position
+        - Unstable 6/4 chords
+        - False chromatic relations
         
         Args:
             start_measure: Optional. If provided, only returns errors from this measure onwards.
             end_measure: Optional. If provided, only returns errors up to this measure.
+            key: Optional. The tonality of the piece (e.g. 'C', 'G', 'Am'). If not provided, it is inferred from the KeySig and the last chord.
             
         Returns:
             A Markdown formatted string detailing any found violations.
