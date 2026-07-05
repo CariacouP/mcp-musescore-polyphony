@@ -381,6 +381,18 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                     if chord_info["inversion"] == 2:
                         m = cur_note[active_tracks[0]]['measure']
                         errors.append((f"- **Measure {m}**: 6/4 chord (2nd inversion) is unstable, must be passing or cadential", m))
+                        
+                # 3. Empty chord (accord vide) - No third
+                if len(set(active_pcs)) >= 2:
+                    bass_pc = min(active_pitches) % 12
+                    intervals_from_bass = [(pc - bass_pc) % 12 for pc in set(active_pcs)]
+                    has_fifth = (7 in intervals_from_bass)
+                    has_third = (3 in intervals_from_bass) or (4 in intervals_from_bass)
+                    has_suspension = (2 in intervals_from_bass) or (5 in intervals_from_bass)
+                    
+                    if has_fifth and not has_third and not has_suspension:
+                        m = cur_note[active_tracks[0]]['measure']
+                        errors.append((f"- **Measure {m}**: Empty chord (accord vide, no third)", m))
 
             # Check false relations
             track_indices = list(tracks.keys())
