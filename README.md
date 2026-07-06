@@ -139,7 +139,8 @@ This MCP server provides comprehensive MuseScore control. **🌟 NEW in this for
 
 ### **Score Information & Analysis**
 - `get_score()` - Get complete score analysis and structure
-- `check_harmony_rules(start_measure, end_measure)` - 🌟 Analyze score for harmony errors (parallel 5ths/8ves, augmented intervals, etc.)
+- `check_harmony_rules(start_measure, end_measure)` - 🌟 Analyze score for harmony errors. Output is now categorized by severity (`[🔴 CRITIQUE]`, `[🟠 AVERTISSEMENT]`, `[🟡 INFO]`).
+- **🌟 MCP Prompt: `harmony_expert`** - A built-in LLM persona prompt that configures the AI to act as a contextual musical judge. It instructs the AI to intelligently filter out `AVERTISSEMENT` and `INFO` errors if they occur on weak beats or passing notes, ensuring high-quality, musically-aware feedback without false positives.
 - `ping_musescore()` - Test connection to MuseScore
 - `connect_to_musescore()` - Establish WebSocket connection
 
