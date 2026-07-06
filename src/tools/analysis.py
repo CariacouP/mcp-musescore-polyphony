@@ -219,7 +219,7 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                 min_pitch, max_pitch, voice_name = ambitus_limits[t]
                 for n in notes:
                     if n["pitchMidi"] < min_pitch or n["pitchMidi"] > max_pitch:
-                        errors.append((f"- **Measure {n['measure']}** (Track {t}): Out of ambitus for {voice_name} ({n['pitchName']})", n['measure']))
+                        errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n['measure']}** (Track {t}): Out of ambitus for {voice_name} ({n['pitchName']})", n['measure']))
             
             for i in range(1, len(notes)):
                 n1 = notes[i-1]
@@ -227,7 +227,7 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                 
                 # Check Augmented
                 if is_augmented_int(n1, n2):
-                    errors.append((f"- **Measure {n2['measure']}** (Track {t}): Augmented interval between {n1['pitchName']} and {n2['pitchName']}", n2['measure']))
+                    errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n2['measure']}** (Track {t}): Augmented interval between {n1['pitchName']} and {n2['pitchName']}", n2['measure']))
                 
                 dtpc = n2["tpc"] - n1["tpc"]
                 dpitch = n2["pitchMidi"] - n1["pitchMidi"]
@@ -239,13 +239,13 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                 # Diminished 4th or 7th
                 if not same_sgn:
                     if abs_dtpc == 8 and abs_dpitch == 4:
-                        errors.append((f"- **Measure {n2['measure']}** (Track {t}): Diminished 4th between {n1['pitchName']} and {n2['pitchName']}", n2['measure']))
+                        errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n2['measure']}** (Track {t}): Diminished 4th between {n1['pitchName']} and {n2['pitchName']}", n2['measure']))
                     elif abs_dtpc == 9 and abs_dpitch == 9:
-                        errors.append((f"- **Measure {n2['measure']}** (Track {t}): Diminished 7th between {n1['pitchName']} and {n2['pitchName']}", n2['measure']))
+                        errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n2['measure']}** (Track {t}): Diminished 7th between {n1['pitchName']} and {n2['pitchName']}", n2['measure']))
                 
                 # 7th and larger
                 if abs(dpitch) > 9 and abs(dpitch) != 12 and abs_dtpc < 6:
-                    errors.append((f"- **Measure {n2['measure']}** (Track {t}): Leap of 7th, 9th or larger", n2['measure']))
+                    errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n2['measure']}** (Track {t}): Leap of 7th, 9th or larger", n2['measure']))
 
                 if i >= 2:
                     n0 = notes[i-2]
@@ -256,7 +256,7 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                     if sgn(dtpc_01) != sgn(dpitch_01):
                         if abs(dtpc_01) == 6 and (abs(dpitch_01) % 12) == 6:
                             if not is_between(n0, n1, n2):
-                                errors.append((f"- **Measure {n1['measure']}** (Track {t}): Diminished 5th not followed by note within interval", n1['measure']))
+                                errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n1['measure']}** (Track {t}): Diminished 5th not followed by note within interval", n1['measure']))
 
                     # 6th resolution
                     same_sgn_01 = sgn(dtpc_01) == sgn(dpitch_01)
@@ -267,24 +267,24 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                         (a_dtpc == 4 and a_dpitch == 8 and not same_sgn_01) or
                         (a_dtpc == 3 and a_dpitch == 9 and same_sgn_01)):
                         if not is_between(n0, n1, n2):
-                            errors.append((f"- **Measure {n1['measure']}** (Track {t}): 6th better avoided, must be followed by note within interval", n1['measure']))
+                            errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n1['measure']}** (Track {t}): 6th better avoided, must be followed by note within interval", n1['measure']))
                         else:
-                            errors.append((f"- **Measure {n1['measure']}** (Track {t}): 6th better avoided", n1['measure']))
+                            errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n1['measure']}** (Track {t}): 6th better avoided", n1['measure']))
 
                     # Octave resolution
                     if is_octave(n1, n2) and not is_between(n1, n2, n0):
-                        errors.append((f"- **Measure {n2['measure']}** (Track {t}): Octave should be preceded by note within compass", n2['measure']))
+                        errors.append((f"[🟡 INFO] - **Measure {n2['measure']}** (Track {t}): Octave should be preceded by note within compass", n2['measure']))
                     if is_octave(n0, n1) and not is_between(n0, n1, n2):
-                        errors.append((f"- **Measure {n1['measure']}** (Track {t}): Octave should be followed by note within compass", n1['measure']))
+                        errors.append((f"[🟡 INFO] - **Measure {n1['measure']}** (Track {t}): Octave should be followed by note within compass", n1['measure']))
 
                 # Sensible resolution check
                 is_outer = (t == active_track_ids[0] or t == active_track_ids[-1]) if active_track_ids else False
                 if n1["pitchMidi"] % 12 == sensible_pc:
                     if n2["pitchMidi"] != n1["pitchMidi"] + 1:
                         if is_outer:
-                            errors.append((f"- **Measure {n1['measure']}** (Track {t}): Sensible in outer voice not resolved to tonic ({n1['pitchName']} -> {n2['pitchName']})", n1['measure']))
+                            errors.append((f"[🔴 CRITIQUE] - **Measure {n1['measure']}** (Track {t}): Sensible in outer voice not resolved to tonic ({n1['pitchName']} -> {n2['pitchName']})", n1['measure']))
                         else:
-                            errors.append((f"- **Measure {n1['measure']}** (Track {t}): Sensible in inner voice not resolved to tonic ({n1['pitchName']} -> {n2['pitchName']})", n1['measure']))
+                            errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n1['measure']}** (Track {t}): Sensible in inner voice not resolved to tonic ({n1['pitchName']} -> {n2['pitchName']})", n1['measure']))
 
         # Pass 2: Parallels (using simultaneous ticks)
         # Rebuild elements ordered by tick across all tracks to find simultaneous movements
@@ -349,7 +349,7 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                         p2 = cur_note[t2]["pitchMidi"]
                         if p1 < p2:
                             m = cur_note[t1]['measure']
-                            errors.append((f"- **Measure {m}** (Tracks {t1}, {t2}): Voice crossing ({cur_note[t1]['pitchName']} is below {cur_note[t2]['pitchName']})", m))
+                            errors.append((f"[🔴 CRITIQUE] - **Measure {m}** (Tracks {t1}, {t2}): Voice crossing ({cur_note[t1]['pitchName']} is below {cur_note[t2]['pitchName']})", m))
 
                 # Spacing (Position ouverte)
                 if len(active_tracks) >= 3:
@@ -360,7 +360,7 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                         p2 = cur_note[t2]["pitchMidi"]
                         if p1 - p2 > 12:
                             m = cur_note[t1]['measure']
-                            errors.append((f"- **Measure {m}** (Tracks {t1}, {t2}): Spacing > 1 octave between upper voices ({cur_note[t1]['pitchName']} and {cur_note[t2]['pitchName']})", m))
+                            errors.append((f"[🟠 AVERTISSEMENT] - **Measure {m}** (Tracks {t1}, {t2}): Spacing > 1 octave between upper voices ({cur_note[t1]['pitchName']} and {cur_note[t2]['pitchName']})", m))
 
                 # Doubling rules
                 active_pitches = [cur_note[t]["pitchMidi"] for t in active_tracks]
@@ -369,7 +369,7 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                 # 1. Sensible doubling
                 if active_pcs.count(sensible_pc) >= 2:
                     m = cur_note[active_tracks[0]]['measure']
-                    errors.append((f"- **Measure {m}**: Doubled leading tone (sensible)", m))
+                    errors.append((f"[🟠 AVERTISSEMENT] - **Measure {m}**: Doubled leading tone (sensible)", m))
                 
                 # 2. Third doubling in root position
                 chord_info = get_triad_info(active_pitches)
@@ -377,10 +377,10 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                     third_pc = chord_info["third"]
                     if active_pcs.count(third_pc) >= 2:
                         m = cur_note[active_tracks[0]]['measure']
-                        errors.append((f"- **Measure {m}**: Doubled third in root position triad", m))
+                        errors.append((f"[🟠 AVERTISSEMENT] - **Measure {m}**: Doubled third in root position triad", m))
                     if chord_info["inversion"] == 2:
                         m = cur_note[active_tracks[0]]['measure']
-                        errors.append((f"- **Measure {m}**: 6/4 chord (2nd inversion) is unstable, must be passing or cadential", m))
+                        errors.append((f"[🟠 AVERTISSEMENT] - **Measure {m}**: 6/4 chord (2nd inversion) is unstable, must be passing or cadential", m))
                         
                 # 3. Empty chord (accord vide) - No third
                 if len(set(active_pcs)) >= 2:
@@ -392,7 +392,7 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                     
                     if has_fifth and not has_third and not has_suspension:
                         m = cur_note[active_tracks[0]]['measure']
-                        errors.append((f"- **Measure {m}**: Empty chord (accord vide, no third)", m))
+                        errors.append((f"[🟠 AVERTISSEMENT] - **Measure {m}**: Empty chord (accord vide, no third)", m))
 
             # Check false relations
             track_indices = list(tracks.keys())
@@ -402,7 +402,7 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                         if t1 != t2 and prev_note[t2] and not prev_rest[t2]:
                             if (cur_note[t1]["tpc"] % 7 == prev_note[t2]["tpc"] % 7) and (cur_note[t1]["tpc"] != prev_note[t2]["tpc"]):
                                 m = cur_note[t1]['measure']
-                                errors.append((f"- **Measure {m}** (Tracks {t1}, {t2}): False relation ({prev_note[t2]['pitchName']} followed by {cur_note[t1]['pitchName']})", m))
+                                errors.append((f"[🟠 AVERTISSEMENT] - **Measure {m}** (Tracks {t1}, {t2}): False relation ({prev_note[t2]['pitchName']} followed by {cur_note[t1]['pitchName']})", m))
 
             
             # Compare all pairs of tracks that changed this tick
@@ -431,29 +431,29 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                             # Check Unison (cint == 0)
                             if cint == 0:
                                 if pint == 0:
-                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel Unison", cur_note[t1]['measure']))
+                                    errors.append((f"[🔴 CRITIQUE] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel Unison", cur_note[t1]['measure']))
                                 else:
-                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct Unison", cur_note[t1]['measure']))
+                                    errors.append((f"[🟡 INFO] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct Unison", cur_note[t1]['measure']))
 
                             # Check 5th (mod 12 == 7)
                             if cint_mod == 7:
                                 if cint == pint:
-                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel 5th", cur_note[t1]['measure']))
+                                    errors.append((f"[🔴 CRITIQUE] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel 5th", cur_note[t1]['measure']))
                                 else:
                                     if is_extreme:
-                                        errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 5th between extreme voices", cur_note[t1]['measure']))
+                                        errors.append((f"[🟡 INFO] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 5th between extreme voices", cur_note[t1]['measure']))
                                     elif not upper_voice_step:
-                                        errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 5th (upper voice leaps)", cur_note[t1]['measure']))
+                                        errors.append((f"[🟡 INFO] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 5th (upper voice leaps)", cur_note[t1]['measure']))
                                     
                             # Check 8ve (mod 12 == 0 and cint != 0)
                             if cint_mod == 0 and cint != 0:
                                 if cint == pint:
-                                    errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel 8ve", cur_note[t1]['measure']))
+                                    errors.append((f"[🔴 CRITIQUE] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel 8ve", cur_note[t1]['measure']))
                                 else:
                                     if is_extreme:
-                                        errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 8ve between extreme voices", cur_note[t1]['measure']))
+                                        errors.append((f"[🟡 INFO] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 8ve between extreme voices", cur_note[t1]['measure']))
                                     elif not upper_voice_step:
-                                        errors.append((f"- **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 8ve (upper voice leaps)", cur_note[t1]['measure']))
+                                        errors.append((f"[🟡 INFO] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 8ve (upper voice leaps)", cur_note[t1]['measure']))
 
         # Filter errors by measure range if provided and remove exact duplicates
         filtered_errors = []
