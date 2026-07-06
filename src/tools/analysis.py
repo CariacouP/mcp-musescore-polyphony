@@ -281,10 +281,19 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                 is_outer = (t == active_track_ids[0] or t == active_track_ids[-1]) if active_track_ids else False
                 if n1["pitchMidi"] % 12 == sensible_pc:
                     if n2["pitchMidi"] != n1["pitchMidi"] + 1:
-                        if is_outer:
-                            errors.append((f"[🔴 CRITIQUE] - **Measure {n1['measure']}** (Track {t}): Sensible in outer voice not resolved to tonic ({n1['pitchName']} -> {n2['pitchName']})", n1['measure']))
+                        resolved_later = False
+                        if i + 1 < len(notes) and notes[i+1]["pitchMidi"] % 12 == tonic_pc:
+                            resolved_later = True
+                        if not resolved_later and i + 2 < len(notes) and notes[i+2]["pitchMidi"] % 12 == tonic_pc:
+                            resolved_later = True
+                            
+                        if resolved_later:
+                            errors.append((f"[🟡 INFO] - **Measure {n1['measure']}** (Track {t}): Sensible resolved via melodic escape/ornament (échappée)", n1['measure']))
                         else:
-                            errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n1['measure']}** (Track {t}): Sensible in inner voice not resolved to tonic ({n1['pitchName']} -> {n2['pitchName']})", n1['measure']))
+                            if is_outer:
+                                errors.append((f"[🔴 CRITIQUE] - **Measure {n1['measure']}** (Track {t}): Sensible in outer voice not resolved to tonic ({n1['pitchName']} -> {n2['pitchName']})", n1['measure']))
+                            else:
+                                errors.append((f"[🟠 AVERTISSEMENT] - **Measure {n1['measure']}** (Track {t}): Sensible in inner voice not resolved to tonic ({n1['pitchName']} -> {n2['pitchName']})", n1['measure']))
 
         # Pass 2: Parallels (using simultaneous ticks)
         # Rebuild elements ordered by tick across all tracks to find simultaneous movements
@@ -440,10 +449,13 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
                                 if cint == pint:
                                     errors.append((f"[🔴 CRITIQUE] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Parallel 5th", cur_note[t1]['measure']))
                                 else:
-                                    if is_extreme:
-                                        errors.append((f"[🟡 INFO] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 5th between extreme voices", cur_note[t1]['measure']))
-                                    elif not upper_voice_step:
-                                        errors.append((f"[🟡 INFO] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 5th (upper voice leaps)", cur_note[t1]['measure']))
+                                    if abs(pint) % 12 == 6:
+                                        errors.append((f"[🔴 CRITIQUE] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Forbidden Diminished 5th to Perfect 5th (d5 -> P5)", cur_note[t1]['measure']))
+                                    else:
+                                        if is_extreme:
+                                            errors.append((f"[🟡 INFO] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 5th between extreme voices", cur_note[t1]['measure']))
+                                        elif not upper_voice_step:
+                                            errors.append((f"[🟡 INFO] - **Measure {cur_note[t1]['measure']}** (Tracks {t1}, {t2}): Direct 5th (upper voice leaps)", cur_note[t1]['measure']))
                                     
                             # Check 8ve (mod 12 == 0 and cint != 0)
                             if cint_mod == 0 and cint != 0:
