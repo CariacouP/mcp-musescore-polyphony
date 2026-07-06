@@ -63,32 +63,8 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
             return {"inversion": 2, "root": root, "third": (bass_pc + intervals[2]) % 12, "fifth": bass_pc}
         return None
 
-    @mcp.tool()
-    async def check_harmony_rules(start_measure: Optional[int] = None, end_measure: Optional[int] = None, key: Optional[str] = None) -> str:
-        """Analyze the current score for harmony errors based on classical rules.
-        
-        Checks for:
-        - Parallel 5ths/8ths and direct 5ths/8ths
-        - Voice crossing and spacing (> 1 octave)
-        - Ambitus limits for SATB
-        - Sensible resolution and doubling
-        - Doubled thirds in root position
-        - Unstable 6/4 chords
-        - False chromatic relations
-        
-        Args:
-            start_measure: Optional. If provided, only returns errors from this measure onwards.
-            end_measure: Optional. If provided, only returns errors up to this measure.
-            key: Optional. The tonality of the piece (e.g. 'C', 'G', 'Am'). If not provided, it is inferred from the KeySig and the last chord.
-            
-        Returns:
-            A Markdown formatted string detailing any found violations.
-        """
-        response = await client.send_command("getScore")
-        if response.get("status") != "success" or "result" not in response or "analysis" not in response["result"]:
-            return f"Error retrieving score: {response.get('message', 'Unknown error')}"
-            
-        score_data = response["result"]["analysis"]
+
+    def _analyze_harmony_data(score_data: dict, start_measure: Optional[int] = None, end_measure: Optional[int] = None, key: Optional[str] = None) -> str:
         staves = score_data.get("staves", [])
         num_staves = len(staves)
         
@@ -488,4 +464,135 @@ def setup_analysis_tools(mcp, client: MuseScoreClient):
         report = "### Harmony Rule Violations\n\n"
         report += "\n".join(filtered_errors)
         return report
+
+
+    @mcp.tool()
+    async def check_harmony_rules(start_measure: Optional[int] = None, end_measure: Optional[int] = None, key: Optional[str] = None) -> str:
+        """Analyze the current score for harmony errors based on classical rules.
+        
+        Checks for:
+        - Parallel 5ths/8ths and direct 5ths/8ths
+        - Voice crossing and spacing (> 1 octave)
+        - Ambitus limits for SATB
+        - Sensible resolution and doubling
+        - Doubled thirds in root position
+        - Unstable 6/4 chords
+        - False chromatic relations
+        
+        Args:
+            start_measure: Optional. If provided, only returns errors from this measure onwards.
+            end_measure: Optional. If provided, only returns errors up to this measure.
+            key: Optional. The tonality of the piece (e.g. 'C', 'G', 'Am'). If not provided, it is inferred from the KeySig and the last chord.
+            
+        Returns:
+            A Markdown formatted string detailing any found violations.
+        """
+        response = await client.send_command("getScore")
+        if response.get("status") != "success" or "result" not in response or "analysis" not in response["result"]:
+            return f"Error retrieving score: {response.get('message', 'Unknown error')}"
+            
+        score_data = response["result"]["analysis"]
+        return _analyze_harmony_data(score_data, start_measure, end_measure, key)
+
+    def _lilypond_to_midi_pitch(lily_pitch: str) -> tuple[int, int]:
+        """Convert LilyPond pitch (e.g. c'', fis') to (midi_pitch, tpc)"""
+        import re
+        match = re.match(r"^([a-g](?:is|es|isis|eses)?)([,']*)$", lily_pitch.strip())
+        if not match:
+            return 60, 14 # fallback C4
+            
+        base_str = match.group(1)
+        octave_str = match.group(2)
+        
+        tpc_map = {
+            'c': 14, 'cis': 21, 'des': 9, 'd': 16, 'dis': 23, 'es': 11,
+            'e': 18, 'eis': 25, 'fes': 6, 'f': 13, 'fis': 20, 'ges': 8,
+            'g': 15, 'gis': 22, 'as': 10, 'a': 17, 'ais': 24, 'bes': 12,
+            'b': 19, 'ces': 7, 'bis': 26
+        }
+        
+        pitch_map = {
+            'c': 0, 'cis': 1, 'des': 1, 'd': 2, 'dis': 3, 'es': 3,
+            'e': 4, 'eis': 5, 'fes': 4, 'f': 5, 'fis': 6, 'ges': 6,
+            'g': 7, 'gis': 8, 'as': 8, 'a': 9, 'ais': 10, 'bes': 10,
+            'b': 11, 'ces': 11, 'bis': 0
+        }
+        
+        tpc = tpc_map.get(base_str, 14)
+        pc = pitch_map.get(base_str, 0)
+        
+        octave = 4
+        if octave_str == "'": octave = 5
+        elif octave_str == "''": octave = 6
+        elif octave_str == "'''": octave = 7
+        elif octave_str == ",": octave = 3
+        elif octave_str == ",,": octave = 2
+        
+        midi = (octave) * 12 + pc
+        return midi, tpc
+
+    @mcp.tool()
+    async def simulate_harmony_changes(changes_json: str, start_measure: Optional[int] = None, end_measure: Optional[int] = None, key: Optional[str] = None) -> str:
+        """Simulate harmony modifications in memory without modifying the actual MuseScore file.
+        Used to verify that a proposed correction does not introduce new errors.
+        
+        Args:
+            changes_json: A JSON string containing an array of changes.
+                          Format: [{"measure": 17, "track": 1, "element_index": 2, "new_pitch_lilypond": "c''"}]
+                          `element_index` counts all elements (chords and rests) in that measure for that track. First element is 0.
+            start_measure: Optional. If provided, only returns errors from this measure onwards.
+            end_measure: Optional. If provided, only returns errors up to this measure.
+            key: Optional. The tonality of the piece.
+        """
+        import json
+        import copy
+        
+        try:
+            changes = json.loads(changes_json)
+        except Exception as e:
+            return f"Error parsing changes_json: {e}"
+            
+        response = await client.send_command("getScore")
+        if response.get("status") != "success" or "result" not in response or "analysis" not in response["result"]:
+            return f"Error retrieving score: {response.get('message', 'Unknown error')}"
+            
+        score_data = copy.deepcopy(response["result"]["analysis"])
+        
+        # Apply changes
+        for ch in changes:
+            target_m = ch.get("measure")
+            target_t = ch.get("track")
+            target_idx = ch.get("element_index")
+            new_pitch_lily = ch.get("new_pitch_lilypond")
+            
+            if None in [target_m, target_t, target_idx, new_pitch_lily]:
+                continue
+                
+            staff_idx = target_t // 4
+            voice_idx = target_t % 4
+            staff_key = f"staff{staff_idx}"
+            
+            new_midi, new_tpc = _lilypond_to_midi_pitch(new_pitch_lily)
+            
+            # Find the measure
+            for m_data in score_data.get("measures", []):
+                if m_data.get("measure") == target_m:
+                    elements = m_data.get("elements", {}).get(staff_key, [])
+                    # Filter elements belonging to this voice
+                    voice_elements = []
+                    for el in elements:
+                        if el.get("name") in ["Chord", "Rest"] and el.get("voice", 0) == voice_idx:
+                            voice_elements.append(el)
+                    
+                    if 0 <= target_idx < len(voice_elements):
+                        target_el = voice_elements[target_idx]
+                        if target_el.get("name") == "Chord":
+                            if "notes" not in target_el or not target_el["notes"]:
+                                target_el["notes"] = [{}]
+                            target_el["notes"][-1]["pitchMidi"] = new_midi
+                            target_el["notes"][-1]["tpc"] = new_tpc
+                            target_el["notes"][-1]["pitchName"] = new_pitch_lily
+                    break
+
+        return _analyze_harmony_data(score_data, start_measure, end_measure, key)
 
