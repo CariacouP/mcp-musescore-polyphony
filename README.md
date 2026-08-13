@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server that provides programmatic control over Mu
 ## Prerequisites
 
 - MuseScore 3.x or 4.x
-- Python 3.8+
+- Python 3.12+
 - Claude Desktop or compatible MCP client
 
 ## Setup
@@ -31,10 +31,10 @@ First, save the QML plugin code to your MuseScore plugins directory:
 
 ```bash
 git clone <your-repo>
-cd mcp-agents-demo
+cd mcp-musescore-polyphony
 python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install fastmcp websockets
+pip install -r requirements.txt
 ```
 
 ### 4. Configure Claude Desktop
@@ -232,7 +232,7 @@ await processSequence(sequence)
 ## File Structure
 
 ```
-mcp-agents-demo/
+mcp-musescore-polyphony/
 ├── .venv/
 ├── server.py                           # Python MCP server entry point
 ├── musescore-mcp-websocket.qml         # MuseScore plugin
