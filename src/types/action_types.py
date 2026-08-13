@@ -8,10 +8,13 @@ class getScoreAction(TypedDict):
     params: Dict[str, Any]
 
 
-class addNoteParams(TypedDict):
+class addNoteParams(TypedDict, total=False):
     pitch: int
     duration: Dict[Literal["numerator", "denominator"], int]
     advanceCursorAfterAction: bool
+    voice: int
+    staffIdx: int
+    measure: int
 
 
 class addNoteAction(TypedDict):
@@ -158,6 +161,11 @@ class prevStaffAction(TypedDict):
     params: Dict[str, Any]
 
 
+class testPolyphonyAction(TypedDict):
+    action: Literal["testPolyphony"]
+    params: Dict[str, Any]
+
+
 ActionSequence = List[
     getScoreAction | addNoteAction | addRestAction | addTupletAction | 
     addLyricsAction | addInstrumentAction | setStaffMuteAction | 
@@ -165,5 +173,5 @@ ActionSequence = List[
     getCursorInfoAction | goToMeasureAction | nextElementAction | 
     prevElementAction | selectCurrentMeasureAction | insertMeasureAction | 
     goToFinalMeasureAction | goToBeginningOfScoreAction | setTimeSignatureAction | 
-    undoAction | nextStaffAction | prevStaffAction
+    undoAction | nextStaffAction | prevStaffAction | testPolyphonyAction
 ]

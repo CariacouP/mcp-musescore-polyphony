@@ -9,19 +9,29 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
     """Setup notes and measures tools."""
     
     @mcp.tool()
-    async def add_note(pitch: int = 64, duration: dict = {"numerator": 1, "denominator": 4}, advance_cursor_after_action: bool = True):
-        """Add a note at the current cursor position with the specified pitch and duration.
-        
-        Args:
-            pitch: MIDI pitch value (0-127, where 60 is middle C)
-            duration: Duration as {"numerator": int, "denominator": int} (e.g., {"numerator": 1, "denominator": 4} for quarter note)
-            advance_cursor_after_action: Whether to move cursor to next position after adding note
-        """
-        return await run_and_format_response(client, "addNote", {
+    async def add_note(
+        pitch: int = 64, 
+        duration: dict = {"numerator": 1, "denominator": 4}, 
+        advance_cursor_after_action: bool = True,
+        voice: Optional[int] = None,
+        staff_idx: Optional[int] = None,
+        measure: Optional[int] = None
+    ):
+        """Add a note at the current cursor position or specified staff/voice/measure with the specified pitch and duration."""
+        payload = {
             "pitch": pitch, 
             "duration": duration,
             "advanceCursorAfterAction": advance_cursor_after_action
-        })
+        }
+        if voice is not None:
+            payload["voice"] = voice
+        if staff_idx is not None:
+            payload["staffIdx"] = staff_idx
+            payload["staff_idx"] = staff_idx
+        if measure is not None:
+            payload["measure"] = measure
+
+        return await run_and_format_response(client, "addNote", payload)
 
     @mcp.tool()
     async def add_rest(duration: dict = {"numerator": 1, "denominator": 4}, advance_cursor_after_action: bool = True):

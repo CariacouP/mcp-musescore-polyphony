@@ -48,6 +48,7 @@ MuseScore {
             case "undo":                    return undo();
             case "goToBeginningOfScore":    return goToBeginningOfScore(command.params);
             case "processSequence":         return processSequence(command.params);
+            case "testPolyphony":           return testPolyphony(command.params);
 
             // Navigation
             case "getCursorInfo":           return getCursorInfo(command.params);
@@ -101,16 +102,25 @@ MuseScore {
         return missing.length > 0 ? { error: "Missing required parameters: " + missing.join(", ") } : { valid: true };
     }
 
+    property bool isTransactionActive: false
+
     function executeWithUndo(operation) {
         if (!curScore) return { error: "No score open" };
         
+        if (isTransactionActive) {
+            return operation();
+        }
+
+        isTransactionActive = true;
         curScore.startCmd();
         try {
             var result = operation();
             curScore.endCmd();
+            isTransactionActive = false;
             return result;
         } catch (e) {
             curScore.endCmd(true);
+            isTransactionActive = false;
             return { error: e.toString() };
         }
     }
@@ -140,9 +150,17 @@ MuseScore {
         return durationNames[duration] || "UNKNOWN";
     }
 
-    // ========================================
-    // CURSOR MANAGEMENT
-    // ========================================
+    function getMeasureStartTick(measureNum) {
+        if (!curScore) return 0;
+        var ticksPerMeasure = 1920;
+        try {
+            var ts = curScore.firstMeasure ? curScore.firstMeasure.timesig : null;
+            if (ts && ts.numerator && ts.denominator) {
+                ticksPerMeasure = Math.floor((480 * 4 * ts.numerator) / ts.denominator);
+            }
+        } catch (e) {}
+        return (measureNum - 1) * ticksPerMeasure;
+    }
 
     function createCursor(params) {
         if (!curScore) throw new Error("No score open");
@@ -152,31 +170,50 @@ MuseScore {
         }
         
         var cursor = curScore.newCursor();
-        cursor.inputStateMode = Cursor.INPUT_STATE_SYNC_WITH_SCORE;
+        cursor.inputStateMode = Cursor.INPUT_STATE_INDEPENDENT;
         
-        // Set track
-        if (params.startStaff !== undefined) cursor.staffIdx = params.startStaff;
-        if (params.voice !== undefined) cursor.voice = params.voice;
+        var staff = (params.staffIdx !== undefined) ? params.staffIdx : ((params.staff_idx !== undefined) ? params.staff_idx : ((params.startStaff !== undefined) ? params.startStaff : 0));
+        var voice = (params.voice !== undefined) ? params.voice : 0;
+        var targetTrack = staff * 4 + voice;
         
-        // Position cursor
-        if (params.rewindMode !== undefined) {
-            cursor.rewind(params.rewindMode);
-        } else if (params.startTick !== undefined) {
+        var targetTick = 0;
+        if (params.startTick !== undefined) {
+            targetTick = params.startTick;
+        } else if (params.measure !== undefined || params.measureNum !== undefined) {
+            targetTick = getMeasureStartTick(params.measure || params.measureNum || 1);
+        } else if (selectionState && selectionState.startTick !== undefined) {
+            targetTick = selectionState.startTick;
+        }
+
+        // 1. Position on target tick FIRST (rewindToTick attaches cursor to tick on Staff 0)
+        cursor.rewind(0);
+        if (targetTick > 0) {
             try {
-                cursor.rewindToTick(params.startTick);
+                cursor.rewindToTick(targetTick);
             } catch (e) {
-                console.log("rewindToTick failed, using manual navigation");
-                cursor.rewind(0);
-                while (cursor.tick < params.startTick && cursor.next()) {}
+                while (cursor.tick < targetTick && cursor.next()) {}
             }
-        } else if (params.measure !== undefined) {
-            cursor.rewind(0);
-            for (var i = 0; i < params.measure && cursor.nextMeasure(); i++) {}
-        } else {
-            cursor.rewind(0);
+        }
+
+        // 2. Staff navigation AT THAT TICK
+        if (staff > 0) {
+            for (var s = 0; s < staff; s++) {
+                cursor.nextStaff();
+            }
         }
         
-        // Set duration
+        // 3. Set staffIdx, voice, and target track AT THAT TICK ON THAT STAFF
+        cursor.staffIdx = staff;
+        cursor.voice = voice;
+        cursor.track = targetTrack;
+        
+        if (curScore.inputState) {
+            try { curScore.inputState.staffIdx = staff; } catch(e) {}
+            try { curScore.inputState.voice = voice; } catch(e) {}
+            try { curScore.inputState.track = staff * 4 + voice; } catch(e) {}
+        }
+        
+        // 3. Set duration
         if (params.duration) {
             cursor.setDuration(params.duration.numerator || 1, params.duration.denominator || 4);
         }
@@ -270,10 +307,14 @@ MuseScore {
     // ========================================
 
     function undo() {
-        return executeWithUndo(function() {
+        if (!curScore) return { error: "No score open" };
+        try {
             cmd("undo");
+            syncStateToSelection();
             return { success: true, message: "Undo successful" };
-        });
+        } catch (e) {
+            return { error: e.toString() };
+        }
     }
 
     function goToBeginningOfScore(params) {
@@ -628,9 +669,12 @@ MuseScore {
             var currTick = cursor.tick;
             var scoreSummary = getScoreSummary();
 
-            var measureIdx = scoreSummary.measures.filter(function(m) { 
-                return m.startTick <= currTick; 
-            }).length - 1;
+            var measureIdx = -1;
+            for (var mCount = 0; mCount < scoreSummary.measures.length; mCount++) {
+                if (scoreSummary.measures[mCount].startTick <= currTick) {
+                    measureIdx = mCount;
+                }
+            }
             
             if (measureIdx < 0) return { error: "Invalid cursor position" };
             
@@ -718,18 +762,33 @@ MuseScore {
         }
 
         return executeWithUndo(function() {
-            syncStateToSelection();
-            
-            var cursor = createCursor();
+            var staff = (params.staffIdx !== undefined) ? params.staffIdx : ((params.staff_idx !== undefined) ? params.staff_idx : ((params.startStaff !== undefined) ? params.startStaff : 0));
+            var voice = (params.voice !== undefined) ? params.voice : 0;
+            var measureNum = (params.measure !== undefined) ? params.measure : ((params.measureNum !== undefined) ? params.measureNum : 1);
+            var targetTrack = staff * 4 + voice;
+
+            var startTick = getMeasureStartTick(measureNum);
+            if (params.startTick !== undefined) startTick = params.startTick;
+
+            curScore.selection.clear();
+            curScore.selection.selectRange(startTick, startTick + 480, staff, staff + 1);
+
+            var cursor = createCursor(params);
+            cursor.staffIdx = staff;
+            cursor.voice = voice;
+            cursor.track = targetTrack;
+            if (curScore.inputState) {
+                try { curScore.inputState.staffIdx = staff; } catch(e) {}
+                try { curScore.inputState.voice = voice; } catch(e) {}
+                try { curScore.inputState.track = targetTrack; } catch(e) {}
+            }
             cursor.setDuration(params.duration.numerator, params.duration.denominator);
             
-            // Check if current position has a rest
-            var hasRest = selectionState.elements.some(function(element) { 
-                return element.name === "Rest"; 
-            });
+            var el = cursor.element;
+            var isRest = (!el || el.name === "Rest" || el.type === Element.REST);
 
-            cursor.addNote(params.pitch, !hasRest);
-            cursor.rewindToTick(selectionState.startTick);
+            var addToChord = (params.addToChord !== undefined) ? params.addToChord : (params.replace ? false : !isRest);
+            cursor.addNote(params.pitch, addToChord);
 
             if (params.advanceCursorAfterAction) {
                 cursor.next();
@@ -752,7 +811,7 @@ MuseScore {
 
             return { 
                 success: true, 
-                message: "Note added with pitch " + params.pitch,
+                message: "Note added pitch=" + params.pitch + " reqMeasure=" + measureNum + " reqStaff=" + staff + " reqVoice=" + voice + " startTick=" + startTick + " | actStaff=" + cursor.staffIdx + " actVoice=" + cursor.voice + " actTrack=" + cursor.track + " cursorTick=" + cursor.tick,
                 currentSelection: selectionState
             };
         });
@@ -769,7 +828,7 @@ MuseScore {
         return executeWithUndo(function() {
             syncStateToSelection();
             
-            var cursor = createCursor();
+            var cursor = createCursor(params);
             cursor.setDuration(params.duration.numerator, params.duration.denominator);
             cursor.addRest();
             cursor.rewindToTick(selectionState.startTick);
@@ -807,7 +866,7 @@ MuseScore {
         }
         
         return executeWithUndo(function() {
-            var cursor = createCursor();
+            var cursor = createCursor(params);
             cursor.setDuration(params.duration.numerator, params.duration.denominator);
             
             var ratio = fraction(params.ratio.numerator, params.ratio.denominator);
@@ -875,7 +934,7 @@ MuseScore {
                 if (!cursor.next()) break;
             }
             
-            var finalElement = processElement(cursor.element) || selectionState.elements[0];
+            var finalElement = processElement(cursor.element) || (Array.isArray(selectionState.elements) ? selectionState.elements[0] : null);
             var finalTick = cursor.tick;
             var staffIdx = cursor.staffIdx;
             
@@ -1181,9 +1240,12 @@ MuseScore {
                 var currentSegment = cursor.segment;
 
                 while (currentSegment) {
-                    var measureIdx = measureBoundaries.filter(function(tick) {
-                        return tick <= currentSegment.tick;
-                    }).length - 1;
+                    var measureIdx = -1;
+                    for (var bCount = 0; bCount < measureBoundaries.length; bCount++) {
+                        if (measureBoundaries[bCount] <= currentSegment.tick) {
+                            measureIdx = bCount;
+                        }
+                    }
 
                     // Extract annotations (like Dynamics, Text, Fermata)
                     if (currentSegment.annotations) {
@@ -1220,6 +1282,85 @@ MuseScore {
             // Restore state
             selectionState = tempState;
             return score;
+        });
+    }
+
+    function testPolyphony(params) {
+        if (!curScore) return { error: "No score open" };
+        
+        return executeWithUndo(function() {
+            var targetMeasure = (params && params.measure) ? params.measure : 9;
+            var mIdx = targetMeasure - 1;
+            
+            var cursor = curScore.newCursor();
+            cursor.rewind(0);
+            for (var m = 0; m < mIdx; m++) {
+                if (!cursor.nextMeasure()) break;
+            }
+            var startTick = cursor.tick;
+            
+            var logs = [];
+            logs.push("Target measure: " + targetMeasure + " startTick: " + startTick);
+            
+            // Note 1: Soprano (Staff 0, Voice 0, Pitch 66 = Fa#4, 1/2)
+            cursor.rewindToTick(startTick);
+            cursor.staffIdx = 0;
+            cursor.voice = 0;
+            cursor.track = 0;
+            if (curScore.inputState) {
+                try { curScore.inputState.staffIdx = 0; } catch(e) {}
+                try { curScore.inputState.voice = 0; } catch(e) {}
+                try { curScore.inputState.track = 0; } catch(e) {}
+            }
+            cursor.setDuration(1, 2);
+            cursor.addNote(66, false);
+            logs.push("Note 1 Soprano added -> tick: " + cursor.tick + " staff: " + cursor.staffIdx + " voice: " + cursor.voice + " track: " + cursor.track);
+            
+            // Note 2: Alto (Staff 0, Voice 1, Pitch 62 = Ré4, 1/2)
+            cursor.rewindToTick(startTick);
+            cursor.staffIdx = 0;
+            cursor.voice = 1;
+            cursor.track = 1;
+            if (curScore.inputState) {
+                try { curScore.inputState.staffIdx = 0; } catch(e) {}
+                try { curScore.inputState.voice = 1; } catch(e) {}
+                try { curScore.inputState.track = 1; } catch(e) {}
+            }
+            cursor.setDuration(1, 2);
+            cursor.addNote(62, false);
+            logs.push("Note 2 Alto added -> tick: " + cursor.tick + " staff: " + cursor.staffIdx + " voice: " + cursor.voice + " track: " + cursor.track);
+
+            // Note 3: Tenor (Staff 1, Voice 0, Pitch 57 = La3, 1/2)
+            cursor.rewindToTick(startTick);
+            cursor.nextStaff();
+            cursor.staffIdx = 1;
+            cursor.voice = 0;
+            cursor.track = 4;
+            if (curScore.inputState) {
+                try { curScore.inputState.staffIdx = 1; } catch(e) {}
+                try { curScore.inputState.voice = 0; } catch(e) {}
+                try { curScore.inputState.track = 4; } catch(e) {}
+            }
+            cursor.setDuration(1, 2);
+            cursor.addNote(57, false);
+            logs.push("Note 3 Tenor added -> tick: " + cursor.tick + " staff: " + cursor.staffIdx + " voice: " + cursor.voice + " track: " + cursor.track);
+
+            // Note 4: Bass (Staff 1, Voice 1, Pitch 47 = Si2, 1/2)
+            cursor.rewindToTick(startTick);
+            cursor.nextStaff();
+            cursor.staffIdx = 1;
+            cursor.voice = 1;
+            cursor.track = 5;
+            if (curScore.inputState) {
+                try { curScore.inputState.staffIdx = 1; } catch(e) {}
+                try { curScore.inputState.voice = 1; } catch(e) {}
+                try { curScore.inputState.track = 5; } catch(e) {}
+            }
+            cursor.setDuration(1, 2);
+            cursor.addNote(47, false);
+            logs.push("Note 4 Bass added -> tick: " + cursor.tick + " staff: " + cursor.staffIdx + " voice: " + cursor.voice + " track: " + cursor.track);
+            
+            return { success: true, logs: logs };
         });
     }
 
