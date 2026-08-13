@@ -1,5 +1,10 @@
 # MuseScore MCP Server
 
+[![GitHub stars](https://img.shields.io/github/stars/CariacouP/mcp-musescore-polyphony?style=social)](https://github.com/CariacouP/mcp-musescore-polyphony)
+[![GitHub forks](https://img.shields.io/github/forks/CariacouP/mcp-musescore-polyphony?style=social)](https://github.com/CariacouP/mcp-musescore-polyphony/network/members)
+[![GitHub license](https://img.shields.io/github/license/CariacouP/mcp-musescore-polyphony)](https://github.com/CariacouP/mcp-musescore-polyphony/blob/main/LICENSE)
+[![Python Version](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+
 A Model Context Protocol (MCP) server that provides programmatic control over MuseScore, via a WebSocket-based plugin system. This allows AI assistants like Claude to compose music, add lyrics, navigate scores, and control MuseScore directly.
 
 ![Demo GIF](./assets/mcp-muse.gif)
@@ -202,9 +207,6 @@ sequence = [
 await processSequence(sequence)
 ```
 
-## Star History
-
-![Star History Chart](./assets/star-history.svg)
 
 ### Connection Issues
 - **"Not connected to MuseScore"**: 
