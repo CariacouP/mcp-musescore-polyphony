@@ -1135,6 +1135,7 @@ MuseScore {
         return executeWithUndo(function() {
             var tempState = selectionState;
             var score = {
+                title: curScore.metaTag("workTitle") || curScore.title || "",
                 numMeasures: curScore.nmeasures,
                 measures: [],
                 staves: []
