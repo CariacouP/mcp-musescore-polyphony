@@ -17,7 +17,16 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
         staff_idx: Optional[int] = None,
         measure: Optional[int] = None
     ):
-        """Add a note at the current cursor position or specified staff/voice/measure with the specified pitch and duration."""
+        """Add a note at the current cursor position or specified staff/voice/measure with specified pitch and duration.
+        
+        Args:
+            pitch: MIDI pitch value (0-127, where 60 is middle C)
+            duration: Duration as {"numerator": int, "denominator": int} (e.g., {"numerator": 1, "denominator": 2} for half note)
+            advance_cursor_after_action: Whether to move cursor to next position after adding note
+            voice: Voice index (0-based: 0=Voice 1 / Soprano, 1=Voice 2 / Alto, 2=Voice 3, 3=Voice 4)
+            staff_idx: Staff index (0-based: 0=Staff 1/Treble, 1=Staff 2/Bass)
+            measure: Measure number (1-based, e.g., 9 for measure 9)
+        """
         payload = {
             "pitch": pitch, 
             "duration": duration,

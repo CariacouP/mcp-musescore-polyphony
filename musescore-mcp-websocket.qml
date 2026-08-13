@@ -150,9 +150,13 @@ MuseScore {
         return durationNames[duration] || "UNKNOWN";
     }
 
+    /**
+     * Calculates the starting tick of a given 1-based measure number.
+     * Uses score time signature or defaults to 1920 ticks (4/4 time signature).
+     */
     function getMeasureStartTick(measureNum) {
         if (!curScore) return 0;
-        var ticksPerMeasure = 1920;
+        var ticksPerMeasure = 1920; // Default 4/4 measure duration (480 ticks * 4)
         try {
             var ts = curScore.firstMeasure ? curScore.firstMeasure.timesig : null;
             if (ts && ts.numerator && ts.denominator) {
@@ -162,6 +166,14 @@ MuseScore {
         return (measureNum - 1) * ticksPerMeasure;
     }
 
+    /**
+     * Creates and positions a MuseScore Cursor object at a specific staff, voice, and measure/tick.
+     * 
+     * Navigation Logic:
+     * 1. Positions cursor on Voice 1 track FIRST (staff * 4) where score segments exist for all measures.
+     * 2. Rewinds to target tick (startTick or measureStartTick).
+     * 3. Switches cursor.voice and cursor.track to target voice (0-3) and staff (0-1) at target tick.
+     */
     function createCursor(params) {
         if (!curScore) throw new Error("No score open");
         
@@ -175,6 +187,7 @@ MuseScore {
         var staff = (params.staffIdx !== undefined) ? params.staffIdx : ((params.staff_idx !== undefined) ? params.staff_idx : ((params.startStaff !== undefined) ? params.startStaff : 0));
         var voice = (params.voice !== undefined) ? params.voice : 0;
         var targetTrack = staff * 4 + voice;
+        var voice1Track = staff * 4;
         
         var targetTick = 0;
         if (params.startTick !== undefined) {
@@ -185,7 +198,8 @@ MuseScore {
             targetTick = selectionState.startTick;
         }
 
-        // 1. Position on target tick FIRST (rewindToTick attaches cursor to tick on Staff 0)
+        // 1. Position on Voice 1 track FIRST (where segments exist for all measures)
+        cursor.track = voice1Track;
         cursor.rewind(0);
         if (targetTick > 0) {
             try {
@@ -195,14 +209,7 @@ MuseScore {
             }
         }
 
-        // 2. Staff navigation AT THAT TICK
-        if (staff > 0) {
-            for (var s = 0; s < staff; s++) {
-                cursor.nextStaff();
-            }
-        }
-        
-        // 3. Set staffIdx, voice, and target track AT THAT TICK ON THAT STAFF
+        // 2. NOW switch to target voice and track at target tick
         cursor.staffIdx = staff;
         cursor.voice = voice;
         cursor.track = targetTrack;
@@ -210,7 +217,7 @@ MuseScore {
         if (curScore.inputState) {
             try { curScore.inputState.staffIdx = staff; } catch(e) {}
             try { curScore.inputState.voice = voice; } catch(e) {}
-            try { curScore.inputState.track = staff * 4 + voice; } catch(e) {}
+            try { curScore.inputState.track = targetTrack; } catch(e) {}
         }
         
         // 3. Set duration
@@ -339,7 +346,7 @@ MuseScore {
             "setStaffMute", "setInstrumentSound", "setTempo"
         ];
 
-        try {
+        return executeWithUndo(function() {
             for (var i = 0; i < params.sequence.length; i++) {
                 var command = params.sequence[i];
                 if (!validCommands.includes(command.action)) {
@@ -348,9 +355,7 @@ MuseScore {
                 processCommand(command);
             }
             return { success: true, message: "Sequence processed", currentSelection: selectionState };
-        } catch (e) {
-            return { error: e.toString() };
-        }
+        });
     }
 
     // ========================================
@@ -770,8 +775,12 @@ MuseScore {
             var startTick = getMeasureStartTick(measureNum);
             if (params.startTick !== undefined) startTick = params.startTick;
 
-            curScore.selection.clear();
-            curScore.selection.selectRange(startTick, startTick + 480, staff, staff + 1);
+            if (!isTransactionActive) {
+                try {
+                    curScore.selection.clear();
+                    curScore.selection.selectRange(startTick, startTick + 480, staff, staff + 1);
+                } catch(e) {}
+            }
 
             var cursor = createCursor(params);
             cursor.staffIdx = staff;
@@ -785,9 +794,15 @@ MuseScore {
             cursor.setDuration(params.duration.numerator, params.duration.denominator);
             
             var el = cursor.element;
-            var isRest = (!el || el.name === "Rest" || el.type === Element.REST);
+            var isChord = (el && (el.name === "Chord" || el.type === Element.CHORD));
 
-            var addToChord = (params.addToChord !== undefined) ? params.addToChord : (params.replace ? false : !isRest);
+            var addToChord = false;
+            if (params.addToChord !== undefined) {
+                addToChord = params.addToChord;
+            } else if (voice === 0 && !params.replace && isChord) {
+                addToChord = true;
+            }
+
             cursor.addNote(params.pitch, addToChord);
 
             if (params.advanceCursorAfterAction) {
@@ -798,8 +813,12 @@ MuseScore {
             var startTick = cursor.tick;
             var staffIdx = cursor.staffIdx;
 
-            curScore.selection.clear();
-            curScore.selection.selectRange(startTick, startTick + element.durationTicks, staffIdx, staffIdx + 1);
+            if (!isTransactionActive) {
+                try {
+                    curScore.selection.clear();
+                    curScore.selection.selectRange(startTick, startTick + element.durationTicks, staffIdx, staffIdx + 1);
+                } catch(e) {}
+            }
             
             selectionState = {
                 startStaff: staffIdx,
