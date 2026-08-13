@@ -204,9 +204,8 @@ await processSequence(sequence)
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/image?repos=CariacouP/mcp-musescore-polyphony&type=date&legend=top-left)](https://www.star-history.com/?repos=CariacouP%2Fmcp-musescore-polyphony&type=date&legend=top-left)
 
-## Troubleshooting
+[![Star History Chart](https://api.star-history.com/image?repos=CariacouP/mcp-musescore-polyphony&type=date)](https://star-history.com/#CariacouP/mcp-musescore-polyphony&Date)
 
 ### Connection Issues
 - **"Not connected to MuseScore"**: 
