@@ -209,4 +209,5 @@ __marimo__/
 # macOS
 .DS_Store
 
-AGENTS.md
+# MCP Knowledge Base
+knowledge/
