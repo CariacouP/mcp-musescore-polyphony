@@ -1,56 +1,30 @@
-# 📝 Résumé de la Session de Développement : Polyphonie & Multi-Voix MuseScore 4 MCP
+# 📝 Résumé de la Session de Développement : Polyphonie & Canon 4 Voix MuseScore 4 MCP
 
 ## 1. Objectifs de la session
-- **Objectif principal** : Écrire de manière **100 % autonome, précise et simultanée** sur 4 voix indépendantes réparties sur 2 portées (`staffIdx` 0 et 1, `voice` 0 et 1) à n'importe quelle mesure de la partition.
-- **Polyphonie 4 voix SATB (Soprano, Alto, Ténor, Basse)** :
-  - **Portée 1 (Clé de Sol / `staffIdx: 0`)** :
-    - Soprano : Voix 1 (`voice: 0`)
-    - Alto : Voix 2 (`voice: 1`)
-  - **Portée 2 (Clé de Fa / `staffIdx: 1`)** :
-    - Ténor : Voix 1 (`voice: 0`)
-    - Basse : Voix 2 (`voice: 1`)
-- **Préservation des mesures existantes** : Empêcher toute altération ou suppression des mesures précédentes (notamment la mesure 1).
-- **Vérification d'harmonie** : Validation via `check_harmony_rules`.
+- **Écriture Polyphonique Stricte 4 Voix** : Écrire avec une indépendance totale de voix (`voice` 0 et 1) et de portée (`staffIdx` 0 et 1) à travers la partition.
+- **Composition Polyphonique Avancée** : Réalisation d'un **Canon à 4 voix** (Soprano, Alto, Ténor, Basse) avec entrées étagées à partir de la mesure 10.
+- **Règles d'écriture sans doublons** : Forçage de `addToChord = false` par défaut pour éviter la fusion accidentelle de notes sur le même temps (suppression des doublons `<d' d'>`).
+- **Analyse harmonique obligatoire** : Validation du contrepoint via `check_harmony_rules`.
 
 ---
 
-## 2. Découvertes techniques fondamentales & Correctifs
+## 2. Déroulement du Canon à 4 Voix (Mesures 10 à 15)
 
-1. **Calcul déterministe de mesure** :
-   - `getMeasureStartTick(measureNum)` s'appuie désormais sur `cursor.nextMeasure()` depuis le tick 0 pour naviguer avec précision sur la liste chaînée des mesures C++.
-
-2. **Protection de la mesure 1 (`deleteSelection`)** :
-   - `deleteSelection(measure=9)` sélectionne désormais graphiquement la plage complète de la mesure 9 (`curScore.selection.selectRange`) avant d'exécuter `cmd("delete")`. La mesure 1 est **100 % protégée**.
-
-3. **Positionnement à 2 phases pour les Voix 2 (`createCursor`)** :
-   - Pour insérer une note en Voix 2 dans une mesure sans segments Voix 2 pré-existants, le curseur se cale **d'abord sur la Voix 1 (`voice1Track = staff * 4`)** pour atteindre le tick de la mesure 9, puis bascule vers la Voix 2 (`cursor.voice = 1`, `cursor.track = staff * 4 + 1`) **au moment de l'injection**.
-
-4. **Encadrement transactionnel (`processSequence`)** :
-   - `processSequence` s'exécute entièrement dans `executeWithUndo`, garantissant une seule transaction atomique sans dérive de curseur ni destruction de sélection GUI.
+- **Mesure 10** : Entrée du thème au **Soprano** (`Fa#4 - Mi4 - Ré4 - Fa#4`)
+- **Mesure 11** : Suite du thème au Soprano (`La4 - Fa#4`)
+- **Mesure 12** : Entrée du Thème à l'**Alto** (`Ré4 - Do#4 - Si3 - Ré4`) + Soprano en contrepoint
+- **Mesure 13** : Poursuite Soprano/Alto en contrepoint à 2 voix
+- **Mesure 14** : Entrée du Thème au **Ténor** sur la Portée 2 (`Fa#3 - Mi3 - Ré3 - Fa#3`)
+- **Mesure 15** : Entrée du Thème à la **Basse** sur la Portée 2 (`Ré3 - Do#3 - Si2 - Ré3`) ➔ **Quatuor à 4 voix actif**
 
 ---
 
-## 3. Résultats Validés (Mesure 9 - SATB)
+## 3. Synthèse de l'Analyse d'Harmonie (`check_harmony_rules`)
 
-```lilypond
-\new Staff {
-  <<
-    \new Voice { \voiceOne fis'2 r2 } % Soprano (Fa#4) - Voix 1 Portée 1
-    \\
-    \new Voice { \voiceTwo d'2 r2 }  % Alto (Ré4)    - Voix 2 Portée 1
-  >>
-}
-\new Staff {
-  <<
-    \new Voice { \voiceOne a2 r2 }   % Ténor (La3)   - Voix 1 Portée 2
-    \\
-    \new Voice { \voiceTwo b,2 r2 }  % Basse (Si2)   - Voix 2 Portée 2
-  >>
-}
+```
+Mesures 10 à 15 : ✅ Canon validé sans quintes ni octaves parallèles.
+[🟠 Avertissement] Mesure 15 : Écartement > 1 octave entre voix supérieures.
 ```
 
-- **Règles d'harmonie** : `✅ No harmony rules violations found in measures 9 to 9!`
-- **Mesure 1** : **Intacte et préservée avec paroles**.
-
 ---
-*Dernière mise à jour : Validation réussie de la polyphonie SATB à 4 voix.*
+*Fichier mis à jour automatiquement suite au test de Canon 4 voix.*
