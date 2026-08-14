@@ -797,15 +797,7 @@ MuseScore {
             cursor.setDuration(params.duration.numerator, params.duration.denominator);
             
             var el = cursor.element;
-            var isChord = (el && (el.name === "Chord" || el.type === Element.CHORD));
-
-            var addToChord = false;
-            if (params.addToChord !== undefined) {
-                addToChord = params.addToChord;
-            } else if (voice === 0 && !params.replace && isChord) {
-                addToChord = true;
-            }
-
+            var addToChord = (params.addToChord === true);
             cursor.addNote(params.pitch, addToChord);
 
             if (params.advanceCursorAfterAction) {
