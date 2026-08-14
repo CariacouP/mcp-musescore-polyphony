@@ -184,7 +184,7 @@ MuseScore {
         }
         
         var cursor = curScore.newCursor();
-        cursor.inputStateMode = Cursor.INPUT_STATE_INDEPENDENT;
+        cursor.inputStateMode = Cursor.INPUT_STATE_SYNC_WITH_SCORE;
         
         var staff = (params.staffIdx !== undefined) ? params.staffIdx : ((params.staff_idx !== undefined) ? params.staff_idx : ((params.startStaff !== undefined) ? params.startStaff : 0));
         var voice = (params.voice !== undefined) ? params.voice : 0;
