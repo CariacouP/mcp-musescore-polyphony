@@ -319,9 +319,15 @@ MuseScore {
     function undo() {
         if (!curScore) return { error: "No score open" };
         try {
-            cmd("undo");
+            if (typeof curScore.undo === "function") {
+                curScore.undo();
+            } else if (typeof curScore.doCommand === "function") {
+                curScore.doCommand("undo");
+            } else {
+                cmd("undo");
+            }
             syncStateToSelection();
-            return { success: true, message: "Undo successful" };
+            return { success: true, message: "Undo executed" };
         } catch (e) {
             return { error: e.toString() };
         }
