@@ -111,6 +111,53 @@ def setup_notes_measures_tools(mcp, client: MuseScoreClient):
         return await run_and_format_response(client, "clearAnnotations", {"prefix": prefix})
 
     @mcp.tool()
+    async def write_lilypond(
+        lilypond_code: str,
+        start_measure: int = 1,
+        staff_idx: int = 0
+    ) -> str:
+        """Write LilyPond notation (notes, rests, chords, polyphony) into the MuseScore partition.
+        Automatically checks score length and appends measures if needed.
+        Executes in a single atomic batch sequence with strict voice ordering (Voice 1 then Voice 2 etc.)
+        for maximum reliability, speed, and single-step undo.
+
+        Args:
+            lilypond_code: LilyPond music snippet (e.g. "c'4 d' e' f' | g'2 c''" or "<< { c''2 d'' } \\\\ { e'2 f' } >>")
+            start_measure: Measure number to start writing into (1-based, default: 1)
+            staff_idx: Staff index (0-based: 0=Staff 1/Treble, 1=Staff 2/Bass)
+        """
+        try:
+            from ..utils.lilypond_writer import lilypond_to_actions
+            actions, max_measure = lilypond_to_actions(lilypond_code, start_measure=start_measure, staff_idx=staff_idx)
+            
+            if not actions:
+                return "No playable music elements found in provided LilyPond code."
+
+            # Check if we need to auto-append measures
+            score_res = await client.send_command("getScore")
+            num_measures = 0
+            if isinstance(score_res, dict):
+                res_payload = score_res.get("result", score_res)
+                if isinstance(res_payload, dict):
+                    analysis = res_payload.get("analysis", {})
+                    num_measures = analysis.get("numMeasures", 0)
+
+            if num_measures > 0 and max_measure > num_measures:
+                needed = max_measure - num_measures
+                await client.send_command("appendMeasure", {"count": needed})
+
+            # Process the action sequence
+            res = await client.send_command("processSequence", {"sequence": actions})
+            
+            if isinstance(res, dict) and (res.get("status") == "success" or res.get("success") is True):
+                return f"[Message] Successfully written LilyPond snippet into measure(s) {start_measure} to {max_measure} (Staff {staff_idx}, {len(actions)} actions)."
+            else:
+                err = res.get("error", "Unknown error") if isinstance(res, dict) else str(res)
+                return f"Error executing LilyPond sequence: {err}"
+        except Exception as e:
+            return f"Error processing LilyPond code: {e}"
+
+    @mcp.tool()
     async def undo():
         """Undo the last action."""
         return await run_and_format_response(client, "undo")
